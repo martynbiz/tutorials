@@ -151,7 +151,7 @@ Create `src/main/resources/templates/home.html`:
 - `th:text="${appName}"` **replaces** the element's body with the model value. The text "Placeholder title" only appears if you open the file directly in a browser. This is Thymeleaf's *natural templating*.
 - `th:text` **escapes HTML** (so `<script>` becomes `&lt;script&gt;`), which protects you against XSS. `th:utext` (unescaped) exists, but avoid it for anything a user typed.
 
-Restart and open <http://localhost:8080/>. There's no more Whitelabel page.
+Restart and open <http://localhost:8080/>. There's no more Whitelabel page. (If you still get one, you're probably missing the Thymeleaf dependency from step 1. See [Common errors](#common-errors).)
 
 **Editing templates while the app runs.** Thymeleaf's cache is off under DevTools, but the app reads templates from the **compiled output** (`target/classes/templates`), not from `src`. After editing an HTML file, press **Build** (<kbd>Ctrl</kbd>+<kbd>F9</kbd>), or rely on the auto-build you set up in guide 01. That copies the file across, and a browser refresh shows the change **without a restart**. (DevTools deliberately doesn't restart for template changes.)
 
@@ -452,6 +452,7 @@ src/main/resources/
 |---|---|
 | `TemplateInputException: Error resolving template [home]` | No `templates/home.html`, or the name is misspelt. View names have **no** leading slash and **no** `.html`. |
 | Browser shows the literal text `home` | You used `@RestController`, which writes the string as the body. Use `@Controller`. |
+| Still a **Whitelabel 404** at `/` even though `HomeController` exists (a breakpoint in `home()` is hit) | Thymeleaf isn't on the classpath: step 1 was skipped, or Maven wasn't reloaded. With no template engine, Spring treats `"home"` as a servlet path and forwards to `/home`, which nothing handles, so you get a 404. Check `pom.xml` contains `spring-boot-starter-thymeleaf`, reload Maven (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>), and **restart** the app. |
 | `Circular view path [greet]: would dispatch back to the current handler URL` | Usually Thymeleaf isn't on the classpath (Maven not reloaded), so Spring falls back to forwarding to `/greet`. Reload Maven and restart. |
 | Template edits don't show | Templates are served from `target/classes`. In IntelliJ press **Build** (<kbd>Ctrl</kbd>+<kbd>F9</kbd>). From the terminal run `./mvnw compile`. Alternatively, while developing, add `spring.thymeleaf.prefix=file:src/main/resources/templates/` so templates are read straight from source. DevTools already turns off Thymeleaf's cache. |
 | New dependency "not found" when running from IntelliJ, even though `pom.xml` has it | Maven wasn't reloaded. Click **Load Maven Changes** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>), then restart the app. |
