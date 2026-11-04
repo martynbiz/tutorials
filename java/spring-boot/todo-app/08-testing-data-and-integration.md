@@ -7,7 +7,7 @@
 - **`@DataJpaTest`**: testing repository queries and mappings against a real (in-memory) database
 - Why `flush()` and `clear()` matter when testing JPA
 - **`@SpringBootTest`** + **`@AutoConfigureMockMvc`**: full integration tests through every layer
-- Keeping tests away from your development database
+- Keeping tests away from your development database, while still building every test database with your **real Flyway migrations**
 - **Test transactions** and automatic rollback
 - How Spring **caches test contexts**, and what breaks the cache
 - Proving the ownership rules end to end
@@ -27,7 +27,14 @@ Guide 07's unit test showed that `TodoListService.getOwned` throws when the repo
 
 - loads **only** JPA things: entities, repositories, the `EntityManager`, a `DataSource`. No controllers, services or security.
 - **replaces your datasource with an embedded in-memory database** by default, so your `data/todo.mv.db` file is never touched.
+- **runs your Flyway migrations** against that fresh database before any test, so the schema under test is the one you ship.
 - wraps **each test in a transaction that's rolled back** at the end, so every test starts with a clean database.
+
+### Tests use the real schema
+
+Every test database in this guide, the `@DataJpaTest` one and the `@SpringBootTest` one, starts empty and is built by **your migrations**, V1 then V2, exactly as production would be. Then Hibernate's `validate` checks the entities against the result.
+
+You'll see tutorials that set `spring.jpa.hibernate.ddl-auto=create-drop` for tests instead. It's slightly faster and needs no SQL, but then your tests run against **Hibernate's idea** of the schema, not the one you deploy. A migration with a typo, a missing index or a forgotten column would pass every test and only fail when the app starts for real. So don't override `ddl-auto` in tests. Free proof that your migrations work is the whole point.
 
 ### The persistence-context trap
 
@@ -176,7 +183,7 @@ Turn on `show-sql` output (it's already on) and run this test. You'll see Hibern
 
 Run the class from the gutter ▶ next to `class TodoListRepositoryTest` (terminal: `./mvnw test -Dtest=TodoListRepositoryTest`).
 
-In the test's console output, press <kbd>Ctrl</kbd>+<kbd>F</kbd> and search for `jdbc:h2:mem` to confirm it's using a throwaway database, not your file.
+In the test's console output, press <kbd>Ctrl</kbd>+<kbd>F</kbd> and search for `jdbc:h2:mem` to confirm it's using a throwaway database, not your file. Then search for `Migrating schema`: you'll find Flyway applying V1 and V2 to it before the first test runs.
 
 **Look inside the test database while it's paused.** The in-memory database only exists inside the test JVM, so IntelliJ's Database window can't see it. The debugger can:
 
@@ -205,7 +212,7 @@ class TodoAppApplicationTests {
 }
 ```
 
-- `jdbc:h2:mem:todo-test` is an in-memory database, created fresh for the test run.
+- `jdbc:h2:mem:todo-test` is an in-memory database, created fresh for the test run. Flyway migrates it on start-up, just as it migrates `data/` when you run the app.
 - `DB_CLOSE_DELAY=-1` keeps it alive between connections for the life of the JVM, rather than dropping it as soon as the last connection closes.
 - `DemoDataLoader` still runs (it's a normal bean), seeding the demo user into the *test* database. That's harmless, and it proves the loader works.
 
@@ -467,11 +474,14 @@ src/test/java/com/example/todoapp/
 | `formLogin()` test is unauthenticated with the right password | Missing `.userParameter("email")`: the helper defaults to `username`. |
 | `cannot find symbol: DataJpaTest` / `AutoConfigureMockMvc` | Boot 4 package moves. Let the IDE import them, and check the `-test` starters from guide 07 are in the POM. |
 | `LazyInitializationException` in a `@SpringBootTest` | Just like production. The test touched a lazy field outside a transaction. Add `@Transactional` to the test, or assert through repositories. |
+| Every test class fails with `Schema validation: ...` or a Flyway error | The migrations don't build a schema that matches the entities. That's a real bug the tests have caught, not a test problem. Fix the migration (or add a new one) rather than switching tests to `create-drop`. |
+| `NULL not allowed` from a migration in the app, but tests pass | Test databases start empty, so a migration that only fails on existing rows passes there. That's the guide 05 V2 trap. Think about existing data whenever a migration adds a `NOT NULL` column. |
 
 ---
 
 ## Recap
 
+- Every test database is built by your **real Flyway migrations** and checked by `validate`. Don't swap in `create-drop` for tests.
 - **`@DataJpaTest`** runs queries against a real, in-memory database, with rollback after each test. It's the only way to prove a query does what its name says. Use `flush()`/`clear()` to test real round trips.
 - **`@SpringBootTest` + `@AutoConfigureMockMvc`** tests the whole stack with no mocks. Point it at an in-memory database, and use `@Transactional` for rollback.
 - `formLogin()`, `user(...)` and `csrf()` from `spring-security-test` let you test real authentication and authorisation.
@@ -486,8 +496,8 @@ src/test/java/com/example/todoapp/
 You've built and tested a complete, secure, multi-user Spring Boot application. Things the series deliberately left out, roughly in the order they'd be worth learning:
 
 1. **Profiles** (`application-dev.properties`, `@Profile`, `@ActiveProfiles`): separate dev, test and prod configuration.
-2. **PostgreSQL + Docker Compose**: Boot's `spring-boot-docker-compose` module starts the database for you. Use **Testcontainers** in tests.
-3. **Flyway migrations**, replacing `ddl-auto=update` (see the sidebar in guide 03).
+2. **PostgreSQL + Docker Compose**: Boot's `spring-boot-docker-compose` module starts the database for you. Use **Testcontainers** in tests. Your Flyway migrations were written to run there unchanged; add `flyway-database-postgresql` alongside the Flyway starter.
+3. **More Flyway**: its Maven plugin or CLI for `info` and `repair` (instead of editing the history table by hand, as in guide 05), repeatable `R__` migrations, and Java-based migrations for data changes that are awkward in SQL.
 4. **REST APIs**: `@RestController`, JSON with Jackson, `ResponseEntity`, `@RestControllerAdvice` with `ProblemDetail` for errors.
 5. **Spring Boot Actuator**: health checks, metrics, `/actuator/conditions` (the auto-configuration report from guide 01, live).
 6. **Roles and method security**: `@EnableMethodSecurity`, `@PreAuthorize`.

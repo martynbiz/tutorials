@@ -66,7 +66,7 @@ Every annotation used in the series, plus common ones you'll meet in other Sprin
 | `@Table(name = "...")` | Overrides the table name (e.g. to avoid reserved words) | 03 |
 | `@Id` | The primary key | 03 |
 | `@GeneratedValue(strategy = IDENTITY)` | The database generates the key | 03 |
-| `@Column(...)` | Column name, nullability, length, uniqueness | 03 |
+| `@Column(...)` | Column name, nullability, length, uniqueness. With Flyway these must **match your migration**: the SQL creates the constraints, and `ddl-auto=validate` only checks that the column exists with a compatible type. | 03 |
 | `@ManyToOne(fetch = LAZY)` | Many of this → one of that. Holds the foreign key. | 03 |
 | `@OneToMany(mappedBy = "...")` | The inverse side of a `@ManyToOne` | 03 |
 | `@JoinColumn(name = "...")` | Names the foreign-key column | 03 |

@@ -58,7 +58,7 @@ class TodoAppApplicationTests {
 }
 ```
 
-It starts the **whole** app. If any bean fails to wire, it fails. Notice it would use your **real `data/` database file**. Guide 08 fixes that; for now, leave it.
+It starts the **whole** app. If any bean fails to wire, it fails. Since guide 03 it checks more than wiring: starting the app runs your Flyway migrations, then Hibernate's `validate`. So this one empty test also fails if a migration has an SQL error, or if an entity and the schema have drifted apart, which makes it worth keeping. Notice it would use your **real `data/` database file**. Guide 08 fixes that; for now, leave it.
 
 ---
 
@@ -89,9 +89,16 @@ Initializr added `spring-boot-starter-test` (JUnit Jupiter, AssertJ, Mockito, Ha
     <artifactId>spring-boot-starter-data-jpa-test</artifactId>
     <scope>test</scope>
 </dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-flyway-test</artifactId>
+    <scope>test</scope>
+</dependency>
 ```
 
-If any artifact doesn't resolve, open start.spring.io, select Spring Web, Thymeleaf, Spring Data JPA, H2 and Spring Security, click **Explore**, and copy the `test`-scoped dependencies from there. They're always right for the selected version.
+(`spring-boot-starter-flyway-test` is the test partner of the Flyway starter from guide 03. Initializr adds it whenever you pick Flyway.)
+
+If any artifact doesn't resolve, open start.spring.io, select Spring Web, Thymeleaf, Spring Data JPA, H2, Flyway Migration and Spring Security, click **Explore**, and copy the `test`-scoped dependencies from there. They're always right for the selected version.
 
 **Load Maven Changes** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>).
 
@@ -677,6 +684,7 @@ src/test/java/com/example/todoapp/
 | `NullPointerException` on a field in a Mockito test | Missing `@ExtendWith(MockitoExtension.class)`, or `@InjectMocks` couldn't match the constructor. Construct the object yourself. |
 | `@WithMockUser` user isn't the one the controller sees | Check `username = "..."` matches the email your stubs expect. With no username it's `user`. |
 | `contextLoads` fails: database locked / unexpected data | It's using the real `data/` file (and the app may be running). Fixed in guide 08. In the meantime, stop the app before running all tests. |
+| `contextLoads` fails with `Schema validation: ...` or a Flyway error | The same failure the app would have at start-up: a migration with an error, or an entity that doesn't match the schema. Start the app to see the same message, and fix it with a migration (guide 03's Common errors). |
 | No green ▶ next to a test / "No tests were found" | The class is outside `src/test/java` (the folder must be green), the method isn't annotated with JUnit 5's `org.junit.jupiter.api.Test` (check the import: not `org.junit.Test`), or Maven wasn't reloaded after adding test dependencies. |
 | Passes in IntelliJ, fails with `./mvnw test` (or the reverse) | They compile separately. Usually Maven wasn't reloaded, or the IntelliJ Project SDK differs from `JAVA_HOME`. **Build → Rebuild Project**, reload Maven, and check both JDKs are 25. |
 

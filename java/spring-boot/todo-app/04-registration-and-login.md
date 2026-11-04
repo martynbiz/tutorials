@@ -602,7 +602,7 @@ User demo = userRepository.save(
         new User("demo@example.com", passwordEncoder.encode("password")));
 ```
 
-Stop the app (■), **delete `data/`** (right-click → **Delete** in the Project window), and restart. The H2 console (or IntelliJ's Database window) now shows a `{bcrypt}$2a$10$...` value in `USERS.PASSWORD_HASH`.
+The loader skips seeding when a user already exists, so it won't touch the old `{noop}` row. This is a **data** reset, not a schema change, so wiping your local data is fine. Stop the app (■), **delete `data/`** (right-click → **Delete** in the Project window), and restart. Flyway rebuilds the tables from V1 and the loader reseeds. The H2 console (or IntelliJ's Database window) now shows a `{bcrypt}$2a$10$...` value in `USERS.PASSWORD_HASH`.
 
 ---
 

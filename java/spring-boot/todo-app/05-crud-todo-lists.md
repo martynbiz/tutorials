@@ -10,9 +10,10 @@
 - **Post/Redirect/Get**, and **flash attributes** for one-off success messages
 - Turning "not found" into a proper **404** with `@ResponseStatus`, and custom **error pages**
 - Scoping every query to the **current user**
+- Your first real **schema change**: a Flyway `V2` migration that adds a `NOT NULL` column to a table that already has rows, and what to do when a migration fails
 - **IntelliJ:** seeing the `@Transactional` **proxy** and **dirty checking** in the debugger, and navigating between controllers, services and templates
 
-By the end, each user can create, view, rename and delete **their own** todo lists, and can't see anybody else's.
+By the end, each user can create, view, rename and delete **their own** todo lists, newest first, and can't see anybody else's.
 
 ---
 
@@ -432,6 +433,154 @@ The Concepts section said callers get a **proxy**, not your object. You can see 
 
 > **Navigating in IntelliJ:** <kbd>Ctrl</kbd>+<kbd>B</kbd> (or <kbd>Ctrl</kbd>+click) goes to a declaration, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd> goes to implementations, <kbd>Alt</kbd>+<kbd>F7</kbd> **finds usages**, and <kbd>Ctrl</kbd>+<kbd>E</kbd> lists recent files. **(Ultimate)** adds <kbd>Ctrl</kbd>+click from a view name like `"lists/index"` to its template, and the **Endpoints** tool window, which lists every URL mapping in the app.
 
+### 9. Your first schema change: newest lists first
+
+A feature request arrives: *"Show my newest lists at the top."* Lists are sorted by name at the moment, and the database doesn't record when a list was created. You need a new column, `todo_list.created_at`.
+
+This is where Flyway earns its place. Your `data/todo.mv.db` already contains rows: the demo lists, and any you created while trying out steps 4–8. A production database would contain thousands. The change has to work **on a table that already has data**, without deleting anything.
+
+> **Don't delete `data/` during this step.** The point is to watch a migration run against existing rows, as it would in production. If your lists page is empty, create a couple of lists first.
+
+#### 9a. Change the entity first
+
+In `TodoList`, add a field, set it in the constructor, and add a getter:
+
+```java
+@Column(name = "created_at", nullable = false)
+private Instant createdAt;
+
+public TodoList(String name, User owner) {
+    this.name = name;
+    this.owner = owner;
+    this.createdAt = Instant.now();
+}
+
+public Instant getCreatedAt() { return createdAt; }
+```
+
+(`import java.time.Instant;`)
+
+Restart the app. It **refuses to start**:
+
+```
+Schema validation: missing column [created_at] in table [todo_list]
+```
+
+That's `ddl-auto=validate` catching the drift between code and database, before a single request could fail. With `ddl-auto=update`, Hibernate would have quietly altered the table instead. Here, *you* decide how the column gets added.
+
+#### 9b. The obvious migration, and why it fails
+
+Create `src/main/resources/db/migration/V2__add_todo_list_created_at.sql` with what looks like the obvious change:
+
+```sql
+alter table todo_list add column created_at timestamp(6) with time zone not null;
+```
+
+Restart. Flyway tries it and fails:
+
+```
+Migrating schema "PUBLIC" to version "2 - add todo list created at"
+Migration of schema "PUBLIC" to version "2 - add todo list created at" failed! Please restore backups and roll back database and code!
+Message    : NULL not allowed for column "CREATED_AT"
+```
+
+Think about what the database was asked to do: add a column that must never be null to a table whose existing rows have no value for it. It can't, so it refuses. On an empty table (in a test, say), this migration works perfectly, which is exactly why this bug reaches production in real projects.
+
+Now fix the migration and restart again. It **still** won't start:
+
+```
+Validate failed: Migrations have failed validation
+Detected failed migration to version 2 (add todo list created at).
+```
+
+Flyway recorded the failed attempt in `flyway_schema_history` (with `success = FALSE`), and it won't carry on until someone confirms the database is in a known state. That someone is you.
+
+> **Why did the failure get recorded?** H2, like MySQL, can't roll back `ALTER TABLE` inside a transaction. Flyway can't undo a half-run migration, so it writes down that the migration failed and stops. **PostgreSQL** *can* roll back DDL, so there the whole failed migration simply disappears and you could just fix it and restart. Expect to meet both behaviours.
+
+#### 9c. Repair the history
+
+In real projects you'd run Flyway's `repair` command. It removes failed entries from the history table (and realigns checksums). Here's the same thing by hand, and it's worth doing once so you see there's no magic involved.
+
+The app can't start, so its H2 console isn't available. H2 has its own console built into the H2 jar that Maven already downloaded. In IntelliJ's **Terminal** (<kbd>Alt</kbd>+<kbd>F12</kbd>, which opens in the project folder), run:
+
+```powershell
+# PowerShell
+java -jar "$env:USERPROFILE\.m2\repository\com\h2database\h2\2.4.240\h2-2.4.240.jar"
+```
+```bash
+# Git Bash / macOS / Linux
+java -jar ~/.m2/repository/com/h2database/h2/2.4.240/h2-2.4.240.jar
+```
+
+(If that file doesn't exist, check the H2 version under **Dependencies** in the **Maven** tool window and adjust the path.)
+
+A browser tab opens with the same H2 console you've used before. Connect with **JDBC URL** `jdbc:h2:file:./data/todo;AUTO_SERVER=TRUE`, user `sa`, empty password, and run:
+
+```sql
+SELECT "installed_rank", "version", "description", "success" FROM "flyway_schema_history";
+DELETE FROM "flyway_schema_history" WHERE "success" = FALSE;
+```
+
+The first query shows V1 with `TRUE` and V2 with `FALSE`. The second deletes the failed row. Then **stop the console**: press <kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal.
+
+> **(Ultimate)** If you connected the **Database** tool window in guide 03, you can run the same SQL there instead. It doesn't need the app to be running.
+
+The failed `ALTER` changed nothing, so deleting its history row puts everything back to "V1 applied, V2 not yet run". Always check that before repairing: if a failed migration had done *half* its work, you'd have to undo that half by hand first.
+
+#### 9d. The migration that works
+
+Replace the contents of `V2__add_todo_list_created_at.sql` with the standard three-step pattern for adding a required column to a table that has data:
+
+```sql
+-- 1. Add the column as nullable, so existing rows are allowed
+alter table todo_list add column created_at timestamp(6) with time zone;
+
+-- 2. Backfill: give every existing row a value
+update todo_list set created_at = current_timestamp where created_at is null;
+
+-- 3. Now that no row is null, enforce it
+alter table todo_list alter column created_at set not null;
+```
+
+You can edit V2 because it never ran successfully anywhere, so nothing depends on its checksum yet.
+
+Restart:
+
+```
+Migrating schema "PUBLIC" to version "2 - add todo list created at"
+Successfully applied 1 migration to schema "PUBLIC", now at version v2
+```
+
+and the app starts, because Hibernate's validation is happy now. In the H2 console (the app's own one is back at `/h2-console`):
+
+```sql
+SELECT ID, NAME, CREATED_AT FROM TODO_LIST;
+```
+
+Every existing list has the **same** `CREATED_AT`: the moment the migration ran. That's the honest answer, because nobody recorded when those lists were really made. Choosing a backfill value is a real design decision in production migrations: a fixed date, a value copied from another column, or "now", as here. There's no universal right answer, only one you've thought about.
+
+#### 9e. Use the column
+
+Change the `order by` in `TodoListRepository.findSummariesByOwnerEmail`:
+
+```java
+@Query("""
+        select new com.example.todoapp.list.TodoListSummary(l.id, l.name, count(t))
+        from TodoList l
+        left join l.todos t
+        where l.owner.email = :email
+        group by l.id, l.name
+        order by l.createdAt desc, l.id desc
+        """)
+```
+
+- Only the last line changes. Sorting by a column that isn't in `group by` is allowed here because the rows are grouped by `l.id`, the primary key, so each group has exactly one `createdAt`.
+- `l.id desc` is a **tie-breaker**. Your backfilled lists all share one timestamp, and without a second sort key their order would be up to the database. Ordering by a unique column last makes the result predictable.
+
+Restart, create a list called "Holiday", and go back to **My lists**. "Holiday" is at the top.
+
+> **Sidebar: generated migrations (Ultimate).** Recent versions of IntelliJ Ultimate can *generate* a Flyway migration by comparing your entities with a database connection. Look in the **New** menu on the `db/migration` folder for a Flyway migration option, and expect the exact wording to vary between versions. Try it against a copy of the V1-only schema and compare the result with your V2. You'll most likely get a single `ADD COLUMN ... NOT NULL`, which is the migration that failed in 9b. Generators are good at *what* changed, not at *how* to change it safely with data in the table. Teams that use them always review and edit the output, and now you know what to look for.
+
 ---
 
 ## Your turn
@@ -568,17 +717,51 @@ public String home(@AuthenticationPrincipal UserDetails currentUser, Model model
 
 </details>
 
+### Exercise 4: break it, edit a migration that has already run
+
+Lists can be up to 100 characters, and you decide 150 would be better. Try the tempting shortcut: in `V1__create_schema.sql`, change `name varchar(100)` to `name varchar(150)` and restart.
+
+1. What happens, and why?
+2. Undo it, and make the change properly.
+
+<details>
+<summary>Answer</summary>
+
+The app won't start:
+
+```
+Migration checksum mismatch for migration version 1
+-> Applied to database : -1966830733     (your numbers will differ)
+-> Resolved locally    : 666639235
+Either revert the changes to the migration, or run repair to update the schema history.
+```
+
+Flyway stored V1's checksum when it ran in guide 03. The file no longer matches, so Flyway can't be sure what your database actually looks like. And even if it carried on, it would never re-run V1, so the column would stay at 100. Every other database that already ran V1 (a teammate's, the test server, production) would never get the change either.
+
+"Run repair" would only make Flyway accept the edited file. The database would still have `varchar(100)` while the file claimed 150, which is worse than failing.
+
+The fix: undo the edit (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, or right-click the file → **Git → Rollback** if you've committed it) and add a new migration, `V3__widen_todo_list_name.sql`:
+
+```sql
+alter table todo_list alter column name set data type varchar(150);
+```
+
+Then change the entity's `@Column(length = 150)` and the form's `@Size(max = 150)` to match. `validate` won't complain if you forget those, because it doesn't check lengths. It's up to you to keep them in step.
+
+</details>
+
 ---
 
 ## Checkpoint
 
 Test by hand. You'll automate this in guides 07 and 08.
 
-1. Log in as `demo@example.com`: you land on **My lists** with "Groceries" and "Work" and their todo counts.
-2. Create a list with a blank name and see the validation error. Then create "Holiday" and see the flash message on the new list's page.
-3. Press **F5** on that page. No duplicate is created (PRG).
-4. Rename it, then delete it.
-5. **Ownership check:** note the URL of one of demo's lists (e.g. `/lists/1`). Open a **private/incognito browser window** (it has a separate session, so you can be logged in as two users at once), register a second account there, and visit `/lists/1`. You must get **your 404 page**, not demo's list. Also try `/lists/1/edit` and submitting a rename to `/lists/1` (you can change a form's `action` in the browser's dev tools).
+1. Log in as `demo@example.com`: you land on **My lists** with "Groceries" and "Work" and their todo counts, newest first.
+2. `flyway_schema_history` shows versions 1 and 2, both with `success = TRUE`. Every list has a `CREATED_AT`.
+3. Create a list with a blank name and see the validation error. Then create "Holiday" and see the flash message on the new list's page. Back on **My lists**, it's at the top.
+4. Press **F5** on that page. No duplicate is created (PRG).
+5. Rename it, then delete it.
+6. **Ownership check:** note the URL of one of demo's lists (e.g. `/lists/1`). Open a **private/incognito browser window** (it has a separate session, so you can be logged in as two users at once), register a second account there, and visit `/lists/1`. You must get **your 404 page**, not demo's list. Also try `/lists/1/edit` and submitting a rename to `/lists/1` (you can change a form's `action` in the browser's dev tools).
 
 ```
 src/main/java/com/example/todoapp/
@@ -598,6 +781,9 @@ src/main/resources/templates/
 │   ├── index.html
 │   └── show.html
 └── … (home, about, greet, login, register, fragments/layout)
+src/main/resources/db/migration/
+├── V1__create_schema.sql
+└── V2__add_todo_list_created_at.sql
 ```
 
 ---
@@ -614,6 +800,11 @@ src/main/resources/templates/
 | Flash message never shows | You used `model.addAttribute` before a redirect. Use `RedirectAttributes.addFlashAttribute`. Also check the page includes the `flash` fragment. |
 | Whitelabel page instead of `error/404.html` | The template is in the wrong folder (it must be `templates/error/404.html`), or `/error` isn't permitted in `SecurityConfig`. |
 | `NullPointerException` on `currentUser` | The URL is reachable anonymously. Check `SecurityConfig` covers it with `authenticated()`. |
+| `Schema validation: missing column [created_at] in table [todo_list]` | You changed the entity but V2 hasn't run. Check the file is in `db/migration` and named `V2__…` with two underscores. |
+| `NULL not allowed for column "CREATED_AT"` during migration | A `NOT NULL` column was added to a table with rows. Use the three-step V2 from step 9d. |
+| `Detected failed migration to version 2` | An earlier attempt failed and was recorded. Delete the failed row from `flyway_schema_history` (step 9c), then restart. |
+| `Migration checksum mismatch for migration version 1` | A migration that already ran was edited. Revert the file and put the change in a new migration (Exercise 4). |
+| Lists in an unpredictable order | The query sorts only by `createdAt`, and backfilled rows share one timestamp. Add `l.id desc` as a tie-breaker. |
 
 ---
 
@@ -625,6 +816,7 @@ src/main/resources/templates/
 - **PRG**: redirect after a successful POST. Flash attributes carry a message across that redirect.
 - `@ResponseStatus` on an exception maps it to an HTTP status. `templates/error/{status}.html` customises the page.
 - **Every** data method takes the owner's identity, and queries filter by it. Someone else's data gives a 404.
+- Schema changes go in a **new** migration. Add a required column to a populated table in three steps: nullable → backfill → `NOT NULL`. A failed migration on H2 is recorded and must be repaired. Never edit a migration that has run.
 
 > **Sidebar: more ways to handle errors and shared model data.**
 > - `@ControllerAdvice` + `@ExceptionHandler(NotFoundException.class)`: one class that handles exceptions from all controllers. Use it when you need custom logic or a custom model, not just a status code.

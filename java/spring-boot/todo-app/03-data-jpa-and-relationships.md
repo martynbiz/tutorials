@@ -6,6 +6,7 @@
 
 - How JPA, Hibernate and Spring Data JPA fit together
 - How to configure a file-based H2 database and browse it with the H2 console
+- How to own the database schema with **Flyway** migrations, written by hand in SQL, while Hibernate only **validates** it
 - How to map Java classes to tables with `@Entity`, `@Id`, `@Column`
 - How to model **relationships**: `User 1──* TodoList 1──* Todo`, with `@ManyToOne` and `@OneToMany`
 - How Spring Data **repositories** turn interface method names into SQL
@@ -75,7 +76,7 @@ Lazy loading needs an open persistence context. Touch a lazy field **after** the
 org.hibernate.LazyInitializationException: could not initialize proxy - no Session
 ```
 
-You'll trigger this on purpose in step 9.
+You'll trigger this on purpose in step 10.
 
 ### Open Session in View (OSIV)
 
@@ -90,6 +91,24 @@ public interface UserRepository extends JpaRepository<User, Long> {
 ```
 
 There's no implementation class. At start-up, Spring Data generates one. You get `save`, `findById`, `findAll`, `delete`, `count` and more for free, and `findByEmail` is **derived from the method name**: `SELECT u FROM User u WHERE u.email = ?`.
+
+### Who creates the tables? Schema migrations
+
+Entities describe tables, but something has to actually run `CREATE TABLE`. There are two approaches:
+
+- **Let Hibernate generate the schema** (`spring.jpa.hibernate.ddl-auto=update` or `create`). It reads your entities at start-up and creates or alters tables to match. It's quick for a demo, but it can't rename a column (it adds a new one and leaves the old one behind), it never removes anything, it can't move data around, and nobody gets to review what it's about to do to a production database.
+- **Write migrations.** A **migration tool** runs numbered SQL scripts in order: `V1__create_schema.sql`, then `V2__add_todo_list_created_at.sql`, and so on. It records each one in a **history table**, so every database (yours, a colleague's, the test database, production) goes through exactly the same steps and ends up with exactly the same schema. The scripts live in git next to the code that needs them, and get reviewed like any other code.
+
+Real projects use the second approach, with **Flyway** or **Liquibase**. We'll use **Flyway**, which Spring Boot auto-configures. When the app starts, Flyway runs **before** Hibernate:
+
+1. Flyway looks in `src/main/resources/db/migration` for scripts named `V<version>__<description>.sql` (note the **two** underscores).
+2. It compares them with its history table, `flyway_schema_history`, and runs any that haven't been applied yet, in version order.
+3. Then Hibernate starts with `ddl-auto=validate`. It changes nothing; it only **checks** that every entity has a matching table and every field has a matching column of a compatible type. If not, the app refuses to start, so a mismatch is caught on your machine and not in production.
+
+Two rules follow from this, and they're the same in every real project:
+
+- **Never edit a migration once it has run.** Flyway stores a checksum of each applied script. Change the file and the next start fails with a *checksum mismatch*. To change the schema, add a **new** migration. You'll do exactly that in guide 05.
+- **The SQL is the source of truth for the schema.** Your `@Column(nullable = false, length = 100)` annotations should match it, but `validate` doesn't check lengths, `NOT NULL`, unique constraints or indexes, only that tables and columns exist with compatible types. Constraints exist because *your migration* created them.
 
 ---
 
@@ -111,11 +130,16 @@ There's no implementation class. At start-up, Spring Data generates one. You get
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-h2console</artifactId>
 </dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-flyway</artifactId>
+</dependency>
 ```
 
 - `spring-boot-starter-data-jpa`: Spring Data JPA, Hibernate and the HikariCP connection pool.
 - `h2`: the database engine itself. `runtime` scope, because your code never imports H2 classes directly.
 - `spring-boot-h2console`: in Boot 4 the H2 web console's auto-configuration is its own module. (Boot 3 bundled it, so older tutorials don't mention this.) If start.spring.io's **Explore** shows a different artifact for your version, use that.
+- `spring-boot-starter-flyway`: Flyway itself, plus Boot's auto-configuration that runs your migrations at start-up. (In Boot 3 you added `flyway-core` directly. In Boot 4, without the starter, Flyway sits on the classpath and does nothing.) H2 support is built into Flyway. Other databases, such as PostgreSQL, need an extra `flyway-database-…` module.
 
 **Load Maven Changes** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) and restart the app.
 
@@ -130,7 +154,8 @@ spring.datasource.username=sa
 spring.datasource.password=
 
 # --- JPA / Hibernate -------------------------------------------------------
-spring.jpa.hibernate.ddl-auto=update
+# Flyway owns the schema; Hibernate only checks it matches the entities
+spring.jpa.hibernate.ddl-auto=validate
 spring.jpa.open-in-view=false
 spring.jpa.show-sql=true
 spring.jpa.properties.hibernate.format_sql=true
@@ -143,11 +168,13 @@ What each part means:
 
 - `jdbc:h2:file:./data/todo` stores the database in `data/todo.mv.db`, relative to where you start the app (the project folder). It survives restarts. Use `jdbc:h2:mem:todo` for an in-memory database that's wiped on every restart.
 - `AUTO_SERVER=TRUE` lets a second process (an IDE database tool, say) open the same file while the app is running, instead of failing with "database is locked".
-- `ddl-auto=update` makes Hibernate compare your entities with the tables at start-up and **add** missing tables and columns. It never drops anything.
+- `ddl-auto=validate` tells Hibernate to **check** the tables against your entities at start-up and fail if they don't match. It never creates or changes anything. Flyway does that (see Concepts).
 - `open-in-view=false` turns off OSIV (see Concepts).
 - `show-sql` / `format_sql` print every SQL statement to the console, neatly formatted. Watching these is the best way to learn what JPA is doing.
 
-> **Sidebar: why real projects don't use `ddl-auto=update`.** It can't rename a column (it adds a new one and leaves the old one), it never removes anything, it can't migrate data, and you can't review what it will do to production before it does it. Real projects use a **migration tool**, either **Flyway** or **Liquibase**: numbered SQL scripts (`V1__create_users.sql`, `V2__add_due_date.sql`) applied in order and recorded in a history table. Once you use one, set `ddl-auto=validate` so Hibernate only *checks* that the schema matches. Spring Boot auto-configures both tools. They're out of scope here, but now you know what to search for.
+There's nothing to configure for Flyway. Boot points it at your datasource and at the default location, `classpath:db/migration`. Create that folder now: in the **Project** window, right-click `src/main/resources` → **New → Directory** and type `db/migration`. The slash creates both folders at once. It stays empty until step 6.
+
+> **Sidebar: the other `ddl-auto` values.** `none` does nothing. `validate` checks, and it's what you use alongside Flyway. `update` alters tables to match the entities, but only ever by adding. `create` drops and recreates everything at start-up, and `create-drop` also drops everything at shutdown. Boot defaults to `create-drop` for an embedded database *unless* it finds Flyway or Liquibase, in which case it defaults to `none`. We set `validate` explicitly because it's the safety net you want. You'll still see `update` in a lot of tutorials. It's fine for a quick throwaway demo, and you now know why real projects avoid it.
 
 ### 3. The `User` entity
 
@@ -357,7 +384,86 @@ Ideally `setTodoList` would be hidden, so that only `TodoList.addTodo`/`removeTo
 
 `LocalDate dueDate` (with no `@Column`) is nullable, mapped to a `DATE` column called `due_date`. JPA maps `java.time` types natively.
 
-### 6. Repositories
+### 6. The first migration: `V1__create_schema.sql`
+
+You have three entities and no tables. If you start the app now, Flyway warns *"No migrations found. Are your locations set up correctly?"*, and then Hibernate's validation stops the start-up with something like:
+
+```
+Schema validation: missing table [todo]
+```
+
+That's `validate` doing its job. Now write the SQL that creates the tables. Right-click `src/main/resources/db/migration` → **New → File**, and name it `V1__create_schema.sql`. That's a capital `V`, then `1`, then **two** underscores. Get the name wrong and Flyway silently ignores the file.
+
+```sql
+create table users (
+    id            bigint generated by default as identity primary key,
+    email         varchar(254)                not null,
+    password_hash varchar(255)                not null,
+    created_at    timestamp(6) with time zone not null,
+    constraint uk_users_email unique (email)
+);
+
+create table todo_list (
+    id       bigint generated by default as identity primary key,
+    name     varchar(100) not null,
+    owner_id bigint       not null,
+    constraint fk_todo_list_owner foreign key (owner_id) references users (id)
+);
+
+create table todo (
+    id           bigint generated by default as identity primary key,
+    title        varchar(200) not null,
+    done         boolean      not null,
+    due_date     date,
+    todo_list_id bigint       not null,
+    constraint fk_todo_todo_list foreign key (todo_list_id) references todo_list (id)
+);
+
+create index ix_todo_list_owner_id on todo_list (owner_id);
+create index ix_todo_todo_list_id on todo (todo_list_id);
+```
+
+Put it side by side with your entities. Every line maps to something you've already written:
+
+| Entity | Column |
+|---|---|
+| `@Table(name = "users")` | `create table users`. Without `@Table`, the table name is the class name in snake_case: `TodoList` → `todo_list`. |
+| `@Id @GeneratedValue(strategy = IDENTITY) Long id` | `bigint generated by default as identity primary key`. The database generates the key. |
+| `@Column(nullable = false, length = 254) String email` | `varchar(254) not null` |
+| `@Column(unique = true)` | `constraint uk_users_email unique (email)` |
+| `Instant createdAt` | `timestamp(6) with time zone`. An `Instant` is a point in time, so it needs a time zone. |
+| `boolean done` | `boolean not null` |
+| `LocalDate dueDate` | `date`, nullable |
+| `@ManyToOne @JoinColumn(name = "owner_id", nullable = false)` | `owner_id bigint not null` plus a **foreign key** to `users (id)` |
+
+`TodoList.todos` (`@OneToMany(mappedBy = ...)`) has **no column**. The foreign key lives on the "many" side, in `todo.todo_list_id`, exactly as in the Concepts diagram.
+
+Things Hibernate wouldn't have done for you:
+
+- **Named constraints** (`uk_users_email`, `fk_todo_list_owner`). When one is violated, the error message names it, which is much easier to read than `CONSTRAINT_8A`. Later migrations can also drop or change them by name.
+- **Indexes on foreign keys.** Almost every query here filters by owner or by list, so those columns need indexes. H2 indexes foreign keys automatically anyway, but PostgreSQL doesn't, so writing them out is a good habit.
+- **Portable SQL.** Everything here also runs unchanged on PostgreSQL, which is the database you're most likely to meet in a real job.
+
+> **IntelliJ:** the file opens with SQL highlighting. **(Ultimate)** may show a banner saying the SQL dialect isn't configured. Choose **H2** so it stops flagging valid H2 syntax. If you've connected the **Database** tool window (step 9), it also autocompletes table and column names.
+
+Start the app now. The log shows Flyway running before Hibernate:
+
+```
+Creating Schema History table "PUBLIC"."flyway_schema_history" ...
+Current version of schema "PUBLIC": << Empty Schema >>
+Migrating schema "PUBLIC" to version "1 - create schema"
+Successfully applied 1 migration to schema "PUBLIC", now at version v1
+```
+
+Hibernate then validates the tables against your entities, finds everything present, and the app starts. Restart it and Flyway says *"Schema "PUBLIC" is up to date. No migration necessary."* Each migration runs **once** per database.
+
+> You may also see `WARN ... Using H2 2.4.x which is newer than the version Flyway has been verified with`. That's harmless: Boot's H2 version is just newer than Flyway's test matrix.
+
+**From now on, `V1__create_schema.sql` is frozen.** It has run against your database, and Flyway has stored its checksum. Any further schema change goes in a new `V2__...` file. You'll write one in guide 05.
+
+> **Only on your machine.** In real teams the line is drawn at **sharing**. While a migration exists only on your machine, not committed or pushed, you can still edit it. Delete your local database (see the reset note in step 9) and let Flyway run the corrected version from scratch. Once anyone else might have run it (a teammate, CI, a server), it's frozen for good. In this series we treat V1 as frozen from here, so you build the habit.
+
+### 7. Repositories
 
 `user/UserRepository.java`:
 
@@ -437,7 +543,7 @@ public record TodoListSummary(Long id, String name, Long todoCount) {
 
 A record is perfect here: immutable data, with no JPA lifecycle. (`count(...)` returns a `Long`, so the component is `Long`, not `long`.)
 
-### 7. Seed demo data with a `CommandLineRunner`
+### 8. Seed demo data with a `CommandLineRunner`
 
 Any bean implementing `CommandLineRunner` runs once the application has started. Create `dev/DemoDataLoader.java`:
 
@@ -499,26 +605,24 @@ public class DemoDataLoader implements CommandLineRunner {
 Points to notice:
 
 - **It's idempotent.** The database is a file, so data survives restarts. Without the `count() > 0` check you'd get a duplicate demo user, and a unique-constraint failure, on every start.
+- **Why not seed in a migration?** Flyway *could* insert these rows from a `V2__demo_data.sql`. But migrations run against **every** database, production included, and a fake user with a known password has no business there. Migrations hold the schema, and sometimes genuine reference data such as a list of countries. Development data belongs in code like this, which you can later limit to development with `@Profile("dev")`.
 - **`@Transactional`** wraps the whole method in one transaction: everything commits together, or nothing does. Spring implements this with a **proxy** around the bean (more in guide 05).
 - `"{noop}password"` is a deliberately odd password value. The `{noop}` prefix will mean something to Spring Security in guide 04 ("this is plain text, not hashed"). For now it's just a string.
 - **Cascade in action:** you only save the lists, and the todos are inserted too.
 - SLF4J (`LoggerFactory.getLogger`) is the logging API Boot sets up for you.
 
-### 8. Run it and explore
+### 9. Run it and explore
 
-Start the app (Debug, <kbd>Shift</kbd>+<kbd>F9</kbd>) and watch the **Debug/Run** console. The SQL log is long, so use <kbd>Ctrl</kbd>+<kbd>F</kbd> in the console to search for `create table` or `insert`. The **soft-wrap** toggle in the console's left toolbar helps with long lines. You'll see Hibernate's `create table` statements (from `ddl-auto=update`) and then the inserts:
+Start the app (Debug, <kbd>Shift</kbd>+<kbd>F9</kbd>) and watch the **Debug/Run** console. The SQL log is long, so use <kbd>Ctrl</kbd>+<kbd>F</kbd> in the console to search for `Flyway` or `insert`. The **soft-wrap** toggle in the console's left toolbar helps with long lines. This time Flyway has nothing to do, because V1 ran in step 6, and then you'll see the loader's inserts:
 
-```sql
-create table users (
-    id bigint generated by default as identity,
-    created_at timestamp(6) with time zone not null,
-    email varchar(254) not null,
-    password_hash varchar(255) not null,
-    primary key (id)
-)
+```
+Schema "PUBLIC" is up to date. No migration necessary.
 ...
+insert into users (created_at, email, password_hash, id) values (?, ?, ?, default)
 insert into todo_list (name, owner_id, id) values (?, ?, default)
 ```
+
+There's no `create table` from Hibernate anywhere in the log. That's `validate` at work: the tables came from your migration.
 
 Now open the **H2 console** at <http://localhost:8080/h2-console>:
 
@@ -531,7 +635,10 @@ Try:
 SELECT * FROM USERS;
 SELECT * FROM TODO_LIST;
 SELECT l.NAME, COUNT(t.ID) FROM TODO_LIST l LEFT JOIN TODO t ON t.TODO_LIST_ID = l.ID GROUP BY l.NAME;
+SELECT "version", "description", "script", "checksum", "success" FROM "flyway_schema_history";
 ```
+
+The last query shows Flyway's history table: one row for creating the history table itself, and one for `1 | create schema | V1__create_schema.sql`, with its checksum and `TRUE` for success. That row is how Flyway knows not to run V1 again. Flyway created this table with lower-case names, so they need the double quotes. Unquoted names, like `USERS`, are upper-cased by H2.
 
 **Or browse it from IntelliJ (Ultimate): the Database tool window.** This is nicer than the web console, and it's why the URL has `AUTO_SERVER=TRUE`: IntelliJ is a *second process* opening the same file while the app is running.
 
@@ -544,9 +651,9 @@ The free edition doesn't have this tool window, so use the H2 web console.
 
 Restart the app. The log should say "Demo data already present — skipping", which proves the data persisted. You'll also find `data/todo.mv.db` in the **Project** window. (If it doesn't appear, right-click the project → **Reload from Disk**.)
 
-> **Resetting the database:** **stop the app** (■), then in the Project window right-click `data` → **Delete**. The next start recreates everything and reseeds. You'll do this whenever a schema change confuses `ddl-auto=update`. If Windows says the file is in use, the app (or a Database tool window connection) still has it open. Stop the app and click **Disconnect** in the Database window.
+> **Resetting your data:** **stop the app** (■), then in the Project window right-click `data` → **Delete**. On the next start, Flyway rebuilds the schema by running every migration from V1, and the loader reseeds. That's safe because `data/` only holds throwaway local data, and the schema can always be rebuilt from your migrations. Use it to get fresh **data** (to re-run the loader, say). **Don't use it to paper over a schema problem.** Fix those with a new migration, because a production database can't be deleted. (The one exception is a migration that has never left your machine; see "Only on your machine" in step 6.) If Windows says the file is in use, the app (or a Database tool window connection) still has it open. Stop the app and click **Disconnect** in the Database window.
 
-### 9. Break it: `LazyInitializationException`
+### 10. Break it: `LazyInitializationException`
 
 Temporarily add this to the **end** of `run(...)` (above the final `log.info` is fine), then **remove `@Transactional`** from the method and delete the `data/` folder:
 
@@ -634,8 +741,9 @@ It **fails** with a foreign-key violation. `cascade` and `orphanRemoval` are **H
 
 ## Checkpoint
 
-- The app starts, creates three tables (`USERS`, `TODO_LIST`, `TODO`), and seeds one user, two lists and three todos.
-- A second start logs "Demo data already present — skipping".
+- Flyway has applied V1, creating three tables (`USERS`, `TODO_LIST`, `TODO`). `flyway_schema_history` shows version 1 with `success = TRUE`.
+- `application.properties` has `spring.jpa.hibernate.ddl-auto=validate`, and the log contains no Hibernate `create table`.
+- The app seeds one user, two lists and three todos. A second start logs "Demo data already present — skipping".
 - The H2 console shows the data.
 - Your pages from guide 02 still work.
 
@@ -655,6 +763,10 @@ src/main/java/com/example/todoapp/
 │   ├── User.java
 │   └── UserRepository.java
 └── web/...
+src/main/resources/
+├── application.properties
+└── db/migration/
+    └── V1__create_schema.sql
 ```
 
 ---
@@ -663,7 +775,13 @@ src/main/java/com/example/todoapp/
 
 | Symptom | Cause / fix |
 |---|---|
-| `Syntax error in SQL statement "create table user ..."` | `USER` is reserved. Add `@Table(name = "users")`. |
+| `Schema validation: missing table [...]` or `missing column [...] in table [...]` | An entity or field has no matching table or column. Either the migration doesn't create it (check the spelling: `todoList` maps to `todo_list`), or Flyway didn't run at all (see the next three rows). |
+| `Schema validation: wrong column type encountered in column [...]` | The SQL type in your migration doesn't fit the Java type, e.g. `varchar` for a `boolean`. If the migration has only ever run on your machine, fix it, delete `data/` and restart (see "Only on your machine" in step 6). Otherwise, add a new migration that alters the column. |
+| No Flyway lines in the log at all | Only `flyway-core` is on the classpath. In Boot 4 you need `spring-boot-starter-flyway`, which brings the auto-configuration. Reload Maven afterwards. |
+| `No migrations found. Are your locations set up correctly?` | The file isn't in `src/main/resources/db/migration`, or its name is wrong: it must be `V1__create_schema.sql`, with a capital `V` and **two** underscores. |
+| `Found non-empty schema(s) "PUBLIC" but no schema history table` | `data/` holds tables made *before* Flyway was added (e.g. by `ddl-auto=update`). Stop the app and delete `data/`, and Flyway builds it from V1. |
+| `Migration checksum mismatch for migration version 1` | You edited `V1__create_schema.sql` after it had run. Undo the edit (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, or **Git → Rollback**) and put the change in a new migration instead. |
+| `Syntax error in SQL statement "create table user ..."` | `USER` is reserved. Name the table `users` in your migration, and add `@Table(name = "users")` to the entity. |
 | `No default (no-argument) constructor for class` | Entities need a no-arg constructor (`protected` is fine). |
 | `Not a managed type: class ...` | The entity is outside `com.example.todoapp`, or is missing `@Entity`. |
 | `mappedBy reference an unknown target entity property` | The `mappedBy` value must be the **field name** on the other side (`todoList`), not the column name. |
@@ -673,7 +791,6 @@ src/main/java/com/example/todoapp/
 | H2 console gives 404 | The `spring-boot-h2console` dependency is missing (Boot 4) or Maven wasn't reloaded, or `spring.h2.console.enabled=true` is missing. |
 | IntelliJ's Database window shows an empty database | It's pointing at a different file. Use the absolute path to `data/todo` (without `.mv.db`), with `;AUTO_SERVER=TRUE`. |
 | `jakarta.persistence` imports are red | Maven wasn't reloaded after adding `spring-boot-starter-data-jpa`. |
-| Odd leftover columns after renaming a field | `ddl-auto=update` added the new column and kept the old one. Delete `data/` and restart. |
 | `Unique index or primary key violation ... EMAIL` | You seeded twice. Check the `count() > 0` guard, or delete `data/`. |
 
 ---
@@ -681,6 +798,7 @@ src/main/java/com/example/todoapp/
 ## Recap
 
 - **JPA** is the spec, **Hibernate** the engine, and **Spring Data JPA** generates repositories.
+- **Flyway** owns the schema. Numbered SQL migrations in `db/migration` run once each, in order, and are recorded in `flyway_schema_history`. Hibernate only checks them (`ddl-auto=validate`). Never edit a migration that has run; add a new one.
 - Entities need `@Entity`, an `@Id`, and a no-arg constructor. Avoid reserved table names.
 - `@ManyToOne` owns the foreign key; `@OneToMany(mappedBy)` is the inverse. Keep both sides in sync with helper methods.
 - Make associations **lazy**. Lazy fields need an open transaction. Watch for **N+1**, and fix it with targeted queries, projections or `join fetch`.
@@ -691,6 +809,8 @@ src/main/java/com/example/todoapp/
 
 - [Spring Data JPA reference: Query methods](https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html)
 - [Spring Boot reference: SQL databases](https://docs.spring.io/spring-boot/reference/data/sql.html)
+- [Spring Boot how-to: Database initialization](https://docs.spring.io/spring-boot/how-to/data-initialization.html) (the Flyway section)
+- [Flyway documentation](https://documentation.red-gate.com/flyway)
 - [Hibernate ORM user guide: Associations](https://docs.jboss.org/hibernate/orm/current/userguide/html_single/Hibernate_User_Guide.html#associations)
 
 **Next:** [04 — Registration and login](04-registration-and-login.md)

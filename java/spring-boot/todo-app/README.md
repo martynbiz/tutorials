@@ -14,6 +14,7 @@ You write all the code yourself. The guides explain the concepts, show focused s
 | Java | **25** (LTS) | Spring Boot 4 needs at least 17; we use 25 |
 | Build tool | Maven, via the bundled `mvnw` wrapper | Nothing to install globally |
 | Database | H2 (file-based) | Stored in `./data/` inside the project |
+| Schema | Flyway migrations | Hand-written SQL in `src/main/resources/db/migration`, with Hibernate set to `validate` |
 | Views | Thymeleaf + Bootstrap 5.3 (CDN) | |
 
 If [start.spring.io](https://start.spring.io) offers a newer **4.1.x** patch when you begin, pick it. Patch releases only fix bugs, so everything here still applies. If it offers **4.2** or later, most of it will still work, but check the release notes when something doesn't match.
@@ -24,6 +25,7 @@ If [start.spring.io](https://start.spring.io) offers a newer **4.1.x** patch whe
 > - Spring Boot was split into smaller modules, so some test annotations moved package. For example, `@WebMvcTest` now lives in `org.springframework.boot.webmvc.test.autoconfigure`. If an import from an old answer won't resolve, let your IDE find the class by name.
 > - The web starter is `spring-boot-starter-webmvc` (it used to be `spring-boot-starter-web`).
 > - Imports use `jakarta.*`, never `javax.*`.
+> - Flyway is enabled with `spring-boot-starter-flyway`. Adding `flyway-core` on its own, as Boot 3 answers suggest, does nothing in Boot 4 (guide 03).
 >
 > When you're unsure of the exact dependency for your version, open start.spring.io, pick the same dependencies, and click **Explore** to see the generated `pom.xml`. It is always correct for the version selected.
 
@@ -70,12 +72,12 @@ Follow them **in order**. Each guide builds on the code from the one before.
 |---|---|---|
 | 01 | [Getting started](01-getting-started.md) | Spring Initializr, project layout, running with `mvnw`, beans and dependency injection, auto-configuration, `application.properties`, DevTools |
 | 02 | [Controllers and Thymeleaf](02-controllers-and-thymeleaf.md) | The Spring MVC request cycle, `@Controller`, `Model`, Thymeleaf syntax, layout fragments, Bootstrap, static files |
-| 03 | [Data, JPA and relationships](03-data-jpa-and-relationships.md) | H2 and its console, entities, repositories, `User → TodoList → Todo`, `@OneToMany` / `@ManyToOne`, lazy loading and N+1 |
+| 03 | [Data, JPA and relationships](03-data-jpa-and-relationships.md) | H2 and its console, Flyway migrations and `ddl-auto=validate`, entities, repositories, `User → TodoList → Todo`, `@OneToMany` / `@ManyToOne`, lazy loading and N+1 |
 | 04 | [Registration and login](04-registration-and-login.md) | The Spring Security filter chain, `SecurityFilterChain`, `UserDetailsService`, password hashing, validation, CSRF, login and logout |
-| 05 | [CRUD: todo lists](05-crud-todo-lists.md) | Services and `@Transactional`, form binding, `@Valid`, Post/Redirect/Get, flash messages, error pages, data scoped to the current user |
+| 05 | [CRUD: todo lists](05-crud-todo-lists.md) | Services and `@Transactional`, form binding, `@Valid`, Post/Redirect/Get, flash messages, error pages, data scoped to the current user, a `V2` migration on existing data |
 | 06 | [CRUD: todos and ownership](06-crud-todos-and-ownership.md) | Nested resources, ownership checks, IDOR, 404 vs 403, `@Modifying` queries |
 | 07 | [Testing: unit and web](07-testing-unit-and-web.md) | JUnit, AssertJ, Mockito, `@WebMvcTest`, `MockMvc`, `@WithMockUser`, CSRF in tests |
-| 08 | [Testing: data and integration](08-testing-data-and-integration.md) | `@DataJpaTest`, `@SpringBootTest`, slices vs the full context, context caching, end-to-end ownership tests |
+| 08 | [Testing: data and integration](08-testing-data-and-integration.md) | `@DataJpaTest`, `@SpringBootTest`, test databases built by your real migrations, slices vs the full context, context caching, end-to-end ownership tests |
 | — | [Annotation cheat sheet](annotations-cheatsheet.md) | Every annotation used in the series, plus common ones you'll meet elsewhere (`@Autowired`, `@Qualifier`, `@Profile`, …) |
 
 ---
@@ -116,4 +118,4 @@ Boxes like this are **sidebars**. They're useful background, but you can skip th
 
 ## Deliberately out of scope
 
-PostgreSQL, Docker, Flyway migrations, profiles, roles and admin users, remember-me, password reset and email, OAuth/social login, REST APIs and SPA frontends. Each guide's recap points to where to go next if you want to add one later.
+PostgreSQL, Docker, profiles, roles and admin users, remember-me, password reset and email, OAuth/social login, REST APIs and SPA frontends. Each guide's recap points to where to go next if you want to add one later.
