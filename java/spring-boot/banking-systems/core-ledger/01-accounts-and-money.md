@@ -8,7 +8,7 @@
 - Why money must never be a `double`, and the traps hidden in `BigDecimal`
 - How to model money as a small, strict **value object**: a Java `record` with a compact constructor
 - How to send money in JSON without losing pennies
-- How to return errors as **`ProblemDetail`** (RFC 9457), including field-by-field validation errors
+- How to return errors as **`ProblemDetail`** (RFC 9457), including field-by-field validation errors and `404`s from your own exceptions
 - How to test an API with **`MockMvcTester`**, and how to bundle test setup into your own annotation
 
 By the end you'll have an API that opens customer accounts and returns them with a balance of exactly `"0.00"` GBP, plus a test suite that proves it.
@@ -143,7 +143,7 @@ tutorials/workspace/banking-systems/core-ledger/
 
 Open it in IntelliJ with **File → Open…**, choose the `core-ledger` folder (the one containing `pom.xml`), and trust the project. Check **File → Project Structure → Project → SDK** is set to a Java 25 JDK.
 
-Delete the generated test `src/test/java/com/example/ledger/CoreLedgerApplicationTests.java`. You'll replace it with better tests in step 10.
+Delete the generated test `src/test/java/com/example/ledger/CoreLedgerApplicationTests.java`. You'll replace it with better tests in step 11.
 
 ### 2. Configure the application
 
@@ -606,6 +606,9 @@ Content-Type: application/json
 ### Get an account
 GET http://localhost:8080/accounts/1
 
+### Get an account that doesn't exist (should be 404)
+GET http://localhost:8080/accounts/999
+
 ### Open an account with a blank name (should be 400)
 POST http://localhost:8080/accounts
 Content-Type: application/json
@@ -719,7 +722,52 @@ Just by existing, this class switches every Spring MVC error (bad JSON, a missin
 }
 ```
 
-### 10. API tests with `MockMvcTester`
+### 10. Your own exceptions as `ProblemDetail`
+
+Send the "doesn't exist" request from `requests.http` (`GET /accounts/999`). Even with `ApiExceptionHandler` in place, you get the old format, and the wrong status:
+
+```json
+{"timestamp":"2026-11-06T22:31:12.401Z","status":500,"error":"Internal Server Error","path":"/accounts/999"}
+```
+
+`ResponseEntityExceptionHandler` only knows about **Spring MVC's own** exceptions, such as `MethodArgumentNotValidException`. `AccountNotFoundException` is yours, so nothing handles it. Spring treats any unhandled exception as a server fault (`500`) and hands it to Spring Boot's fallback `/error` page, which uses the old format. A missing account isn't a server fault, though: the client asked for something that doesn't exist, which is a `404`.
+
+To handle an exception of your own, add a method to `ApiExceptionHandler` and annotate it with **`@ExceptionHandler`**, naming the exception class:
+
+```java
+import com.example.ledger.account.AccountNotFoundException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+...
+
+    @ExceptionHandler(AccountNotFoundException.class)
+    ProblemDetail handle(AccountNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setTitle("Account not found");
+        return problem;
+    }
+```
+
+- **`@ExceptionHandler(AccountNotFoundException.class)`** tells Spring: "when any controller throws this exception, call this method instead of failing". Because the class is a `@RestControllerAdvice`, it applies to every controller, not just `AccountController`.
+- In step 9, Spring had already built the `ProblemDetail` and you added to it. Here nothing exists yet, so you build one. **`ProblemDetail.forStatusAndDetail(status, detail)`** creates it with the status and a human-readable `detail`. The exception message, `"No account with id 999"`, is a good detail.
+- **`setTitle`** replaces the default title for the status (`"Not Found"`) with something more specific. The title should describe the *kind* of problem, the same for every missing account. The `detail` describes *this* occurrence.
+- **Returning a `ProblemDetail`** is enough. Spring uses its `status` as the response status and sends it with the `application/problem+json` content type, the media type RFC 9457 defines.
+- The method is package-private and its name doesn't matter. Spring finds it by the annotation. Later guides add one of these for each new exception, so they're all called `handle` and told apart by their parameter type.
+
+Restart and send the request again:
+
+```json
+{
+  "detail": "No account with id 999",
+  "instance": "/accounts/999",
+  "status": 404,
+  "title": "Account not found"
+}
+```
+
+> **Sidebar: why not `@ResponseStatus`?** You may see `@ResponseStatus(HttpStatus.NOT_FOUND)` put on an exception class. It fixes the status code, but the response still goes through Spring Boot's `/error` page, so you get a `404` in the old format, not a `ProblemDetail`. An `@ExceptionHandler` keeps every error's shape in one place: `ApiExceptionHandler`.
+
+### 11. API tests with `MockMvcTester`
 
 Every API test in this tutorial needs the same setup: the full application, the real Flyway migrations, and an **in-memory** database, so tests never touch your `./data` file and always start clean. Rather than repeating that on every class, make your own annotation.
 
@@ -799,6 +847,15 @@ class AccountApiTest {
         assertThat(response).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(response).bodyJson().extractingPath("$.errors.name").isEqualTo("must not be blank");
     }
+
+    @Test
+    void returnsProblemDetailForAnUnknownAccount() {
+        var response = mvc.get().uri("/accounts/999999");
+
+        assertThat(response).hasStatus(HttpStatus.NOT_FOUND);
+        assertThat(response).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response).bodyJson().extractingPath("$.title").isEqualTo("Account not found");
+    }
 }
 ```
 
@@ -807,6 +864,8 @@ class AccountApiTest {
 - `bodyJson().extractingPath("$.balance.amount")` uses a JSONPath expression to pick out a value.
 - `doesNotHavePath("$.balance.zero")` is a **regression test** for the Jackson bug in step 8. If someone removes `@JsonAutoDetect`, this test catches it.
 - Notice that the test asserts `"0.00"` as a **string**. If someone removes `@JsonFormat`, this fails too.
+- `hasContentType(MediaType.APPLICATION_PROBLEM_JSON)` checks the response really is a `ProblemDetail` (`application/problem+json`), not Spring Boot's old error format, which is plain `application/json`. Checking the status alone wouldn't tell them apart: an `@ResponseStatus` 404 would pass.
+- The unknown-account test uses `999999`, not `999`, so it can't accidentally hit an account another test opened.
 
 > **In older codebases:** the same test with classic MockMvc looks like `mockMvc.perform(post("/accounts").contentType(...).content(...)).andExpect(status().isCreated()).andExpect(jsonPath("$.balance.amount").value("0.00"))`. Both styles work. `MockMvcTester` gives better failure messages.
 
@@ -822,46 +881,51 @@ class AccountApiTest {
 
 ## Your turn
 
-### Exercise 1: a proper 404
+### Exercise 1: a name that's too long
 
-Right now `GET /accounts/999` throws `AccountNotFoundException`, which Spring reports as a `500 Internal Server Error`. That's wrong: the client asked for something that doesn't exist.
+`OpenAccountRequest` has two rules on `name`: `@NotBlank` and `@Size(max = 100)`. Step 11 only tests the first.
 
-1. Add an `@ExceptionHandler` method to `ApiExceptionHandler` that turns `AccountNotFoundException` into a `404` `ProblemDetail` with the title `"Account not found"` and the exception's message as the `detail`.
-2. Add a test to `AccountApiTest` that requests `/accounts/999999` and checks the status, the `application/problem+json` content type, and the title.
+1. Add a request to `requests.http` that opens an account with a 101-character name, and send it. Note the `errors` message.
+2. Add a test to `AccountApiTest` that does the same, and checks for a `400`, the `application/problem+json` content type, and the message under `$.errors.name`.
 
 <details>
 <summary>Hint</summary>
 
-`ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage())` builds one. A method in a `@RestControllerAdvice` that **returns** a `ProblemDetail` gets the correct status and content type automatically. `MediaType.APPLICATION_PROBLEM_JSON` is the content type constant.
+`"x".repeat(101)` builds the name, and `.formatted(...)` puts it into the JSON, just as `Money` builds its error messages. Copy the exact message from the response you got in part 1.
 
 </details>
 
 <details>
 <summary>Solution</summary>
 
-In `ApiExceptionHandler` (add imports for `AccountNotFoundException`, `HttpStatus` and `ExceptionHandler`):
+In `requests.http` (the name is 101 `x`s):
 
-```java
-@ExceptionHandler(AccountNotFoundException.class)
-ProblemDetail handle(AccountNotFoundException ex) {
-    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-    problem.setTitle("Account not found");
-    return problem;
-}
+```http
+### Open an account with a 101-character name (should be 400)
+POST http://localhost:8080/accounts
+Content-Type: application/json
+
+{"name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
 ```
 
 In `AccountApiTest`:
 
 ```java
 @Test
-void returnsProblemDetailForAnUnknownAccount() {
-    var response = mvc.get().uri("/accounts/999999");
+void rejectsANameLongerThan100Characters() {
+    var response = mvc.post().uri("/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                    {"name": "%s"}
+                    """.formatted("x".repeat(101)));
 
-    assertThat(response).hasStatus(HttpStatus.NOT_FOUND);
+    assertThat(response).hasStatus(HttpStatus.BAD_REQUEST);
     assertThat(response).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
-    assertThat(response).bodyJson().extractingPath("$.title").isEqualTo("Account not found");
+    assertThat(response).bodyJson().extractingPath("$.errors.name").isEqualTo("size must be between 0 and 100");
 }
 ```
+
+`@Size(max = 100)` has a default `min` of `0`, which is why the message mentions both. A name of exactly 100 characters is allowed. That matches the `VARCHAR(100)` column, so the database never has to reject it.
 
 </details>
 
@@ -921,10 +985,10 @@ All tests pass:
 ```
 
 ```
-[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
 ```
 
-(6 in `MoneyTest` and 3 in `AccountApiTest`, if you did both exercises.)
+(6 in `MoneyTest` and 4 in `AccountApiTest`, if you did both exercises.)
 
 You can open an account, fetch it, and get a `400` with field errors for a blank name and a `404` `ProblemDetail` for an unknown id.
 
@@ -977,6 +1041,9 @@ That's `Money` doing its job. If you hit it from the API, validate the request b
 **`ArithmeticException: Rounding necessary`**
 You called `setScale(2)` without a rounding mode, or with `RoundingMode.UNNECESSARY`, outside `Money`'s `try` block. Decide deliberately: either reject the value (what `Money` does) or round with an explicit `RoundingMode` and a comment explaining why.
 
+**`GET /accounts/999` returns `500` with `timestamp`, `status`, `error` and `path`**
+That's Spring Boot's old error format, so nothing handled `AccountNotFoundException`. Extending `ResponseEntityExceptionHandler` isn't enough on its own: check `ApiExceptionHandler` has the `@ExceptionHandler(AccountNotFoundException.class)` method from step 10, and that you restarted the app.
+
 **`"zero": true` appears in your JSON**
 You skipped the `@JsonAutoDetect(isGetterVisibility = NONE)` fix in step 8.
 
@@ -999,6 +1066,7 @@ In Spring Boot 4 it moved to `org.springframework.boot.webmvc.test.autoconfigure
 - **Send money in JSON as a string, together with the currency.**
 - **Entities guard their own state**: no setters, named factories, and safe types out of the getters.
 - **`ProblemDetail`** gives every error a standard shape. Extend `ResponseEntityExceptionHandler` to add detail such as field errors.
+- **`ResponseEntityExceptionHandler` only covers Spring MVC's own exceptions.** Map your own with an `@ExceptionHandler` method that returns a `ProblemDetail`, or they become `500`s in Spring Boot's old error format.
 - **A meta-annotation** (`@LedgerIntegrationTest`) gives every integration test identical configuration and one cached application context.
 
 ### Interview angle

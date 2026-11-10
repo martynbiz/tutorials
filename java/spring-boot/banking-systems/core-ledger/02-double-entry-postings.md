@@ -1177,7 +1177,7 @@ Debits still equal credits (the postings are fine), and no customer looks overdr
 ```
 
 ```
-[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 New files since guide 01:

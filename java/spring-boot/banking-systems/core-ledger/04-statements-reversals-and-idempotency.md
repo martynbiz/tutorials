@@ -1138,7 +1138,7 @@ A cash machine (ATM) that loses its connection mid-withdrawal will retry too. Ad
 ```
 
 ```
-[INFO] Tests run: 42, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 New files since guide 03:
