@@ -11,9 +11,11 @@ Short, standalone guides to core Java language features. Each one teaches one to
 | Guide | What it covers |
 |---|---|
 | [Records](records.md) | Declaring records, what Java generates, compact constructors for validation and normalisation, withers, defensive copies, records in sets and maps |
+| [Interfaces](interfaces.md) | Implementing interfaces, coding against an interface, several interfaces, constants, default, static and private methods, clashing defaults, functional interfaces and a first look at lambdas |
 
 Coming later:
 
+- **Lambdas:** capturing variables, method references, and `java.util.function`
 - **Pattern matching:** record patterns, and `switch` and `instanceof` that take records apart
 - **Sealed types:** sealed interfaces with records, for a fixed set of alternatives
 - **Generic and local records**
