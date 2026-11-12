@@ -122,6 +122,21 @@ A JWT is **signed, not encrypted**. Anyone holding one can read it. The signatur
 
 Passport signs with an **RSA private key** that never leaves Passport. It publishes the matching **public keys** as a **JWK Set** (JSON Web Key Set) at its **JWKS endpoint**. Anyone can fetch them and check a signature, but nobody can create one. The `kid` in a token's header says which key in the set to use.
 
+> **Sidebar: what if a token's contents must stay secret? (JWE)** The JWTs in this series are, strictly, **JWS** (JSON Web Signature, [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)). A JWT can also be a **JWE** (JSON Web Encryption, [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516)): the payload is encrypted with the **recipient's** public key, so only the recipient can read it. A JWE has five parts instead of three. Encryption alone doesn't prove who created the token, so when both are needed the token is signed first and the result encrypted: a **nested JWT**.
+>
+> You rarely need it, because:
+> - HTTPS already hides tokens in transit (see the HTTPS sidebar below).
+> - Tokens only go to the parties meant to read them: the ID token to the client, the access token to the APIs.
+> - Personal data can be kept out of tokens altogether. The client can ask `/userinfo` for it instead.
+>
+> Consider it when:
+> - **A token passes through someone who shouldn't read it.** For example, an access token carrying personal or sensitive claims meant only for the API is held by a browser app or mobile app, where the user, extensions or other code on the device can decode it.
+> - **Claims must stay protected beyond HTTPS.** HTTPS is decrypted at load balancers and gateways, and tokens end up in logs. Health, financial or government data, or a policy requiring end-to-end protection, can rule that out. OpenID Connect lets a client register to receive encrypted ID tokens for this (`id_token_encrypted_response_alg`), and some high-security profiles, such as those used in open banking, make use of it.
+>
+> For access tokens there's often a simpler answer: **opaque (reference) tokens**. The token is just a random string with nothing to decode, and the API asks the authorisation server what it means (*token introspection*, [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662)). Spring's authorisation server supports these per client (`OAuth2TokenFormat.REFERENCE`). The cost is a call to the authorisation server on every request (usually cached).
+>
+> JWE has its own costs: every recipient needs an encryption key pair to manage (separate from signing keys), tokens become larger, and you can no longer paste one into a decoder while debugging. Spring's authorisation server issues signed JWTs only. Encrypted tokens would need a custom token generator, using the Nimbus JOSE + JWT library Spring already includes. This series doesn't need them.
+
 ### Discovery
 
 How does a client know where Passport's endpoints are, which algorithms it uses, and where its keys live? It reads Passport's **discovery document**, at a fixed path under the **issuer** URL:
@@ -712,7 +727,7 @@ Access tokens last five minutes. Or you reused its code, which revoked it. Or Pa
 - **OAuth 2.0** delegates access with **access tokens**. **OpenID Connect** adds sign-in, with the **ID token**, `/userinfo` and **discovery**.
 - The **authorisation code flow** sends only a short-lived, single-use **code** through the browser (front channel). The client swaps it for tokens server to server (back channel), authenticating with its own secret.
 - **Exact redirect URIs**, **`state`** and **PKCE** protect the code. Spring Security's authorisation server requires PKCE from every client.
-- Tokens are **signed JWTs**: readable by anyone, changeable by no one. The public keys are published in the **JWKS**, and found by `kid`.
+- Tokens are **signed JWTs** (JWS): readable by anyone, changeable by no one. The public keys are published in the **JWKS**, and found by `kid`. **Encrypted JWTs** (JWE) exist for tokens whose contents must stay secret, but are rarely needed: HTTPS, keeping personal data out of tokens, or opaque access tokens usually cover it.
 - **Spring Security** is a chain of **filters** per `SecurityFilterChain`. Authentication puts an **`Authentication`** in the **`SecurityContext`** (kept in the session). `AuthorizationFilter` applies the rules, and `ExceptionTranslationFilter` starts a login through an **`AuthenticationEntryPoint`**.
 - An authorisation server has **two chains**: the protocol endpoints, and the login page and everything else.
 
@@ -739,11 +754,20 @@ So anyone can verify its signatures without being able to create them. Tokens ar
 
 </details>
 
+<details>
+<summary>"Are JWTs encrypted? When would you encrypt one?"</summary>
+
+Usually not. A typical JWT is a JWS: signed, so it can't be changed, but its payload is only Base64url-encoded, so anyone holding it can read it. A JWE encrypts the payload with the recipient's public key, and a nested JWT signs then encrypts to get both integrity and confidentiality. You'd use it when a token carries sensitive claims and passes through a party that shouldn't read them, such as a browser or mobile app holding an API's access token, or when policy requires protection beyond TLS, which ends at load balancers and leaves tokens in logs. Often simpler alternatives work: keep personal data out of tokens and use `/userinfo`, or issue opaque access tokens that the API checks by introspection.
+
+</details>
+
 ### Further reading
 
 - [RFC 6749: The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749)
 - [RFC 7636: Proof Key for Code Exchange (PKCE)](https://www.rfc-editor.org/rfc/rfc7636)
 - [RFC 9700: Best Current Practice for OAuth 2.0 Security](https://www.rfc-editor.org/rfc/rfc9700)
+- [RFC 7516: JSON Web Encryption (JWE)](https://www.rfc-editor.org/rfc/rfc7516)
+- [RFC 7662: OAuth 2.0 Token Introspection](https://www.rfc-editor.org/rfc/rfc7662)
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 - [Spring Security reference: Authorization Server](https://docs.spring.io/spring-security/reference/servlet/oauth2/authorization-server/index.html)
 - [Microsoft identity platform: the OAuth 2.0 authorization code flow](https://learn.microsoft.com/entra/identity-platform/v2-oauth2-auth-code-flow): the same flow, as Entra implements it
