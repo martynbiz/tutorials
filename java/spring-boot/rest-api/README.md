@@ -28,7 +28,7 @@ Three kinds of caller use it, and each is allowed to do different things:
         ┌──────────────────────┼──────────────────────┐
         ▼                      ▼                      ▼
   Organiser service      Customer (via an app,   Scanner service
-  (curl in this series)  Swagger UI here)        localhost:8081
+  (curl in this series)  Swagger UI here)        (command-line app)
         │                      │                      │
         │  POST /events        │  POST /bookings      │  POST /bookings/{id}/check-in
         └──────────────────────┼──────────────────────┘
@@ -69,7 +69,7 @@ Along the way, each part of the domain gives a reason to learn something about A
 | `POST` | `/bookings/{id}/cancel` | Cancel a booking | Customer (their own) |
 | `POST` | `/bookings/{id}/check-in` | Check a booking in at the door | Scanner |
 
-By the end, every error, from a typo in a date to a missing token, comes back in the same format: a `ProblemDetail` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)). Guides 01–05 build that up one kind of error at a time, and guide 08 catches the last ones: unexpected failures.
+By the end, every error, from a typo in a date to a missing token, comes back in the same format: a `ProblemDetail` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)). The guides build that up one kind of error at a time, and guide 08 catches unexpected failures and explains the two cases left over.
 
 ---
 
@@ -132,9 +132,9 @@ Three separate Maven projects, as they would be in real life: an API, the servic
 | Tickets API | `http://localhost:8080` |
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
 | Authorisation server | `http://localhost:9000` |
-| Scanner | `http://localhost:8081` |
+| Scanner | No URL: a command-line app you run with booking ids, such as `java -jar target/scanner-0.0.1-SNAPSHOT.jar 2` |
 
-**Running more than one.** From guide 05 on, start the **authorisation server first**. The API starts without it, but it fetches the authorisation server's public keys when the first request carrying a token arrives. If the authorisation server isn't running by then, that request fails with a `500` until you start it. In IntelliJ, open each project in its own window (**File → Open**, then choose **New Window**) and run each from the green arrow next to its `main` method. In a terminal, use one window per project, each running `./mvnw spring-boot:run`. In **PowerShell**, type `.\mvnw` instead of `./mvnw`.
+**Running more than one.** From guide 05 on, start the **authorisation server first**. The API starts without it, but it fetches the authorisation server's public keys when the first request carrying a token arrives. If the authorisation server isn't running by then, that request fails with a `500` until you start it. From guide 09, run the scanner last, once both are up. In IntelliJ, open each project in its own window (**File → Open**, then choose **New Window**) and run each from the green arrow next to its `main` method. In a terminal, use one window each for the authorisation server and the API, each running `./mvnw spring-boot:run`. The scanner isn't a server: it runs, checks in the bookings you give it, and exits (guide 09 shows how). In **PowerShell**, type `.\mvnw` instead of `./mvnw`.
 
 > **Plain HTTP, on purpose.** Everything runs over `http://` so you can read every request and response. **A real API must use HTTPS.** Access tokens work like cash: anyone who sees one can use it until it expires. Over plain HTTP, anyone on the network can see them.
 
