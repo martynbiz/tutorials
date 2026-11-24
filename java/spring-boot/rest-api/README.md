@@ -182,7 +182,7 @@ Boxes like this are **sidebars**. They're useful background, but you can skip th
 - **Plain Java:** records for request and response objects, constructor injection, no Lombok.
 - **Money** is stored as a whole number of pence in a `long`, so there are no rounding problems. The [banking systems](../banking-systems/README.md) series covers money properly.
 - **Development secrets are in the configuration** (client secrets, users' passwords). That keeps the guides readable. Each one is marked, and the guide says what a real system would do instead.
-- **Try requests** in Swagger UI or with `curl`. Every curl command is shown on one line, so it pastes into any terminal. In PowerShell, type `curl.exe` instead of `curl`. Windows PowerShell 5.1 strips the double quotes from JSON bodies, though, so for commands that send JSON use Git Bash, IntelliJ's HTTP client or Swagger UI instead.
+- **Try requests** in Swagger UI or with `curl`. Every curl command is shown on one line, so it pastes into any terminal. In PowerShell, type `curl.exe` instead of `curl`. Commands with double quotes inside them, like JSON bodies, also have a PowerShell line, because Windows PowerShell mangles those quotes on the way to `curl.exe`.
 
 ---
 

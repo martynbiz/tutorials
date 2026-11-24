@@ -431,14 +431,18 @@ The `create` method reads the new event's venue in `EventResponse.from(event)` a
 
 ### 6. Try it
 
-Restart the app. The examples below are for Git Bash, macOS or Linux.
+Restart the app. Each `bash` example is for Git Bash, macOS or Linux, and the `powershell` line under it is the same request for Windows PowerShell.
 
-> **PowerShell and JSON.** Windows PowerShell removes the double quotes inside a single-quoted argument when it passes it to `curl.exe`, so a JSON body arrives as `{title:Autumn Folk Night,…}` and you get a `400`. For requests with a JSON body, use Git Bash, or the `requests.http` file from step 11, or Swagger UI.
+> **Why the PowerShell lines look different.** Windows PowerShell mangles double quotes inside the arguments it passes to `curl.exe`. Paste the bash line with `curl.exe` and the JSON body arrives as `{title:Autumn Folk Night,…}`, and you get a `400`. In the PowerShell lines, `--%` (the *stop-parsing token*) tells PowerShell to pass the rest of the line to `curl.exe` untouched. Each argument after it then goes in double quotes, with `\"` for a double quote inside it. The lines work in PowerShell 5.1 and 7.
 
 Create an event:
 
 ```bash
 curl -i -H 'Content-Type: application/json' -d '{"title":"Autumn Folk Night","category":"MUSIC","venueId":4,"startsAt":"2030-10-03T19:30:00Z","description":"Three folk acts."}' localhost:8080/events
+```
+
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"title\":\"Autumn Folk Night\",\"category\":\"MUSIC\",\"venueId\":4,\"startsAt\":\"2030-10-03T19:30:00Z\",\"description\":\"Three folk acts.\"}" localhost:8080/events
 ```
 
 `-d` sends a body, and makes curl use `POST`. `-H` adds a header: without `Content-Type: application/json`, curl would label the body as form data.
@@ -457,6 +461,10 @@ The new event is number 29 on a fresh database (yours may differ if you've alrea
 curl -i -X PUT -H 'Content-Type: application/json' -d '{"title":"Autumn Folk Night (moved)","category":"MUSIC","venueId":3,"startsAt":"2030-10-10T19:30:00Z"}' localhost:8080/events/29
 ```
 
+```powershell
+curl.exe --% -i -X PUT -H "Content-Type: application/json" -d "{\"title\":\"Autumn Folk Night (moved)\",\"category\":\"MUSIC\",\"venueId\":3,\"startsAt\":\"2030-10-10T19:30:00Z\"}" localhost:8080/events/29
+```
+
 ```
 HTTP/1.1 200
 Content-Type: application/json
@@ -470,6 +478,10 @@ The description is now `null`. You didn't send it, and `PUT` replaces everything
 curl -X PATCH -H 'Content-Type: application/json' -d '{"description":"Now with a ceilidh band."}' localhost:8080/events/29
 ```
 
+```powershell
+curl.exe --% -X PATCH -H "Content-Type: application/json" -d "{\"description\":\"Now with a ceilidh band.\"}" localhost:8080/events/29
+```
+
 ```
 {"id":29,"title":"Autumn Folk Night (moved)","category":"MUSIC","venue":{"id":3,"name":"Northern Works","city":"Manchester"},"startsAt":"2030-10-10T19:30:00Z","description":"Now with a ceilidh band."}
 ```
@@ -480,6 +492,10 @@ Now send something invalid: a blank title, and no venue or start time:
 
 ```bash
 curl -i -H 'Content-Type: application/json' -d '{"title":" ","category":"MUSIC"}' localhost:8080/events
+```
+
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"title\":\" \",\"category\":\"MUSIC\"}" localhost:8080/events
 ```
 
 You get a `400` `ProblemDetail` whose detail is `Invalid request content.`, and nothing else. The validation worked, but the client has no idea **which** fields are wrong, or why. That's the next step.
@@ -587,6 +603,10 @@ Restart and send the invalid request again:
 
 ```bash
 curl -i -H 'Content-Type: application/json' -d '{"title":" ","category":"MUSIC"}' localhost:8080/events
+```
+
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"title\":\" \",\"category\":\"MUSIC\"}" localhost:8080/events
 ```
 
 ```
@@ -957,6 +977,10 @@ Add one to event 29, the event you created in step 6:
 
 ```bash
 curl -i -H 'Content-Type: application/json' -d '{"name":"Early Bird","pricePence":1800,"capacity":50}' localhost:8080/events/29/ticket-types
+```
+
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"name\":\"Early Bird\",\"pricePence\":1800,\"capacity\":50}" localhost:8080/events/29/ticket-types
 ```
 
 ```
@@ -1375,6 +1399,10 @@ Send a `POST /events` with the body from step 6, plus `"id": 1` and `"colour": "
 curl -i -H 'Content-Type: application/json' -d '{"id":1,"colour":"red","title":"Autumn Folk Night","category":"MUSIC","venueId":4,"startsAt":"2030-10-03T19:30:00Z","description":"Three folk acts."}' localhost:8080/events
 ```
 
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"id\":1,\"colour\":\"red\",\"title\":\"Autumn Folk Night\",\"category\":\"MUSIC\",\"venueId\":4,\"startsAt\":\"2030-10-03T19:30:00Z\",\"description\":\"Three folk acts.\"}" localhost:8080/events
+```
+
 A `201`, with a **new** id chosen by the database, and event 1 untouched. `EventRequest` has no `id` or `colour` component, so there's nowhere for them to go, and Spring Boot's Jackson setup ignores properties it doesn't recognise rather than failing.
 
 That's the request DTO protecting you: the only fields a client can set are the ones you listed. If `POST /events` had accepted an `Event` entity, the `id` might have been bound, and any field you added to the entity later would become settable from outside without anyone deciding it should be.
@@ -1392,6 +1420,10 @@ Send a ticket type with only a name to event 2: `{"name":"Free"}`. What's in `er
 
 ```bash
 curl -i -H 'Content-Type: application/json' -d '{"name":"Free"}' localhost:8080/events/2/ticket-types
+```
+
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"name\":\"Free\"}" localhost:8080/events/2/ticket-types
 ```
 
 ```
@@ -1460,7 +1492,7 @@ Modified: `pom.xml` (validation starters), `Event.java` (constructor and setters
 The request record uses a primitive (`long`, `int`) where it should use a wrapper (`Long`, `Integer`). `@NotNull` can't see a primitive's missing value. See exercise 3.
 
 **A `400` with `Failed to read request` for JSON that looks fine, in PowerShell**
-Windows PowerShell stripped the double quotes out of the `-d '…'` argument before `curl.exe` saw it. Use Git Bash, `requests.http` or Swagger UI for requests with a JSON body.
+Windows PowerShell stripped the double quotes out of the `-d '…'` argument before `curl.exe` saw it. Use the `powershell` line, which starts `curl.exe --%` and escapes each inner quote as `\"` (see step 6).
 
 **`Migration checksum mismatch for migration version 1`**
 You put the `ticket_type` table into `V1` instead of a new `V2`. Applied migrations must never change. Move it to `V2__ticket_types.sql` and restore `V1`; in development only, you can delete the `data` folder instead.

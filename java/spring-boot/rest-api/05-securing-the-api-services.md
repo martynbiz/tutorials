@@ -748,6 +748,10 @@ Start the **auth-server first**, then the API. Run the tests in a moment; first,
 curl -i -H 'Content-Type: application/json' -d '{"title":"Autumn Folk Night","category":"MUSIC","venueId":4,"startsAt":"2030-10-03T19:30:00Z"}' localhost:8080/events
 ```
 
+```powershell
+curl.exe --% -i -H "Content-Type: application/json" -d "{\"title\":\"Autumn Folk Night\",\"category\":\"MUSIC\",\"venueId\":4,\"startsAt\":\"2030-10-03T19:30:00Z\"}" localhost:8080/events
+```
+
 ```
 HTTP/1.1 401
 WWW-Authenticate: Bearer resource_metadata="http://localhost:8080/.well-known/oauth-protected-resource"
@@ -774,7 +778,7 @@ curl localhost:8080/.well-known/oauth-protected-resource
 
 The other new headers (`X-Content-Type-Options`, `X-Frame-Options` and so on) are Spring Security's default security headers. Guide 08 looks at them.
 
-> **Windows PowerShell and JSON.** Windows PowerShell 5.1 strips the double quotes out of arguments it passes to `curl.exe`, so a JSON body like the one above arrives broken. For requests with a JSON body, use `requests.http` (step 11) or Git Bash. Requests without a body, and the token requests (form fields, not JSON), work fine with `curl.exe`.
+> **Windows PowerShell and JSON.** Requests with a JSON body have a `curl.exe --%` line for PowerShell, as in guide 02 step 6. PowerShell doesn't expand variables after `--%`, so the `Authorization` header, with its `$ORGANISER_TOKEN`, goes before it. Requests without a body, and the token requests (form fields, not JSON), work fine with plain `curl.exe`.
 
 **With the organiser's token.** Put a fresh token in a variable. In Git Bash or another Unix shell:
 
@@ -786,6 +790,10 @@ ORGANISER_TOKEN=eyJraWQ...
 
 ```bash
 curl -i -H "Authorization: Bearer $ORGANISER_TOKEN" -H 'Content-Type: application/json' -d '{"title":"Autumn Folk Night","category":"MUSIC","venueId":4,"startsAt":"2030-10-03T19:30:00Z"}' localhost:8080/events
+```
+
+```powershell
+curl.exe -H "Authorization: Bearer $ORGANISER_TOKEN" --% -i -H "Content-Type: application/json" -d "{\"title\":\"Autumn Folk Night\",\"category\":\"MUSIC\",\"venueId\":4,\"startsAt\":\"2030-10-03T19:30:00Z\"}" localhost:8080/events
 ```
 
 ```

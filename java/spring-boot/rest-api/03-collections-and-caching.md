@@ -436,7 +436,7 @@ Notice what that does and doesn't save. Your method still runs, and still loads 
 
 ### 10. Try a conditional request
 
-These requests put double quotes inside a header, which Windows PowerShell mangles on the way to `curl.exe`. Use Git Bash, or the `requests.http` file in step 11.
+These requests put double quotes inside a header, which Windows PowerShell mangles on the way to `curl.exe`. In PowerShell, use the `curl.exe --%` lines, which escape the quotes as `\"` (guide 02 step 6 explains them).
 
 ```bash
 curl -i localhost:8080/events/5
@@ -457,6 +457,10 @@ Event 5 has never been changed, so its version and ETag are `0`. Ask again, as a
 curl -i -H 'If-None-Match: "0"' localhost:8080/events/5
 ```
 
+```powershell
+curl.exe --% -i -H "If-None-Match: \"0\"" localhost:8080/events/5
+```
+
 ```
 HTTP/1.1 304
 Cache-Control: max-age=60, public
@@ -472,8 +476,16 @@ Now change the event, and ask with the old ETag:
 curl -X PATCH -H 'Content-Type: application/json' -d '{"description":"Final confirmed."}' localhost:8080/events/5
 ```
 
+```powershell
+curl.exe --% -X PATCH -H "Content-Type: application/json" -d "{\"description\":\"Final confirmed.\"}" localhost:8080/events/5
+```
+
 ```bash
 curl -i -H 'If-None-Match: "0"' localhost:8080/events/5
+```
+
+```powershell
+curl.exe --% -i -H "If-None-Match: \"0\"" localhost:8080/events/5
 ```
 
 ```
@@ -748,24 +760,30 @@ Spring Data doesn't reject nonsense page parameters; it **corrects** them. A siz
 
 ### Exercise 3: quoting ETags
 
-Send these two conditional requests for event 5 (in Git Bash, or as two extra requests in `requests.http`). One gets a `304` and one doesn't. Which, and why?
+Step 10's `PATCH` moved event 5 to version 1, so its ETag is now `"1"`. (If you skipped that step, it's still `"0"`: use `0` in both requests below.)
+
+Send these two conditional requests for event 5. One gets a `304` and one doesn't. Which, and why?
 
 ```bash
-curl -i -H 'If-None-Match: 0' localhost:8080/events/5
+curl -i -H 'If-None-Match: 1' localhost:8080/events/5
 ```
 
 ```bash
-curl -i -H 'If-None-Match: W/"0"' localhost:8080/events/5
+curl -i -H 'If-None-Match: W/"1"' localhost:8080/events/5
 ```
 
-(If you did step 10's `PATCH`, event 5 is now at version 1. Use `1` instead of `0`, or try it on another event.)
+In PowerShell, the first works with `curl.exe` as it is. The second needs `--%`, or PowerShell strips the quotes and sends `W/1`:
+
+```powershell
+curl.exe --% -i -H "If-None-Match: W/\"1\"" localhost:8080/events/5
+```
 
 <details>
 <summary>Solution</summary>
 
-`If-None-Match: 0` gets a `200` with the full body, every time. An ETag is a **quoted** string, and `0` without quotes isn't the same value as `"0"`, so it never matches. Clients should send back exactly what they received in `ETag`, quotes included.
+`If-None-Match: 1` gets a `200` with the full body, every time. An ETag is a **quoted** string, and `1` without quotes isn't the same value as `"1"`, so it never matches. Clients should send back exactly what they received in `ETag`, quotes included.
 
-`If-None-Match: W/"0"` gets a `304`. `W/` marks a **weak** ETag, and `If-None-Match` uses weak comparison, which ignores the `W/` prefix: `W/"0"` and `"0"` match. That's deliberate in HTTP: for "can I keep using my copy?", equivalent is good enough.
+`If-None-Match: W/"1"` gets a `304`. `W/` marks a **weak** ETag, and `If-None-Match` uses weak comparison, which ignores the `W/` prefix: `W/"1"` and `"1"` match. That's deliberate in HTTP: for "can I keep using my copy?", equivalent is good enough.
 
 </details>
 
@@ -816,7 +834,7 @@ Same cause. Without the whitelist, any property path in the entity can be sorted
 The body is now a page object, not an array, so `$[0]` finds nothing. Use `$.content[0]`, as in step 6.
 
 **`If-None-Match` never gives a `304`**
-The ETag was sent without its quotes (`If-None-Match: 0`), which never matches, or PowerShell stripped the quotes before `curl.exe` saw them. Send exactly what the `ETag` header contained, `"0"`. See exercise 3.
+The ETag was sent without its quotes (`If-None-Match: 0`), which never matches, or PowerShell stripped the quotes before `curl.exe` saw them (use `--%`). Or the event has changed since you got its ETag: a `PATCH` increases the version, so check the `ETag` in the latest response. Send exactly what the `ETag` header contained, quotes included. See exercise 3.
 
 ---
 

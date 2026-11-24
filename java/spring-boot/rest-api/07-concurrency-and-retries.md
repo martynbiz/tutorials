@@ -26,7 +26,7 @@ For trying things out by hand you also need:
 
 - **The auth-server running** (port 9000), then the API, as in guide 06.
 - **Alice's token**, from Swagger UI's Authorize button (guide 06 step 14), and the **organiser's token**, from curl (guide 05 step 10).
-- **Git Bash**, IntelliJ's HTTP client or Swagger UI for requests with a JSON body, as before.
+- **A terminal.** In PowerShell, use the `curl.exe --%` lines, as before.
 
 You don't need to have written multi-threaded Java before. The one test that uses threads explains each piece as it goes.
 
@@ -560,10 +560,14 @@ curl -u organiser:organiser-secret -d grant_type=client_credentials -d scope=eve
 ORGANISER_TOKEN=eyJraWQ...
 ```
 
-These requests send JSON, so use Git Bash (or `requests.http`, step 14). Change event 3 the guide 06 way, without `If-Match`:
+(In PowerShell, `$ORGANISER_TOKEN = "eyJraWQ..."`.) Change event 3 the guide 06 way, without `If-Match`:
 
 ```bash
 curl -i -X PATCH -H "Authorization: Bearer $ORGANISER_TOKEN" -H 'Content-Type: application/json' -d '{"description": "Now with a support act."}' localhost:8080/events/3
+```
+
+```powershell
+curl.exe -H "Authorization: Bearer $ORGANISER_TOKEN" --% -i -X PATCH -H "Content-Type: application/json" -d "{\"description\": \"Now with a support act.\"}" localhost:8080/events/3
 ```
 
 ```
@@ -578,6 +582,10 @@ Event 3 has never been changed, so its ETag is `"0"`. (If you've changed it, `cu
 curl -i -X PATCH -H "Authorization: Bearer $ORGANISER_TOKEN" -H 'If-Match: "0"' -H 'Content-Type: application/json' -d '{"description": "Now with a support act."}' localhost:8080/events/3
 ```
 
+```powershell
+curl.exe -H "Authorization: Bearer $ORGANISER_TOKEN" --% -i -X PATCH -H "If-Match: \"0\"" -H "Content-Type: application/json" -d "{\"description\": \"Now with a support act.\"}" localhost:8080/events/3
+```
+
 ```
 HTTP/1.1 200
 ETag: "1"
@@ -589,6 +597,10 @@ The change, and its new ETag. Now be the second organiser, who also read version
 
 ```bash
 curl -i -X PATCH -H "Authorization: Bearer $ORGANISER_TOKEN" -H 'If-Match: "0"' -H 'Content-Type: application/json' -d '{"description": "Something else."}' localhost:8080/events/3
+```
+
+```powershell
+curl.exe -H "Authorization: Bearer $ORGANISER_TOKEN" --% -i -X PATCH -H "If-Match: \"0\"" -H "Content-Type: application/json" -d "{\"description\": \"Something else.\"}" localhost:8080/events/3
 ```
 
 ```
@@ -877,10 +889,14 @@ Restart the API. Flyway applies `V4` on startup.
 
 The outputs below came from a **fresh database**, where ticket type 57's two Front Row tickets were still for sale. In yours, alice bought them in guide 06. To match the outputs, stop the API, delete the API project's `data` folder, and start it again: Flyway rebuilds everything from the migrations. (Or use another ticket type, and expect different ids and prices.)
 
-Get alice's token from Swagger UI, as in guide 06 step 14, and put it in `ALICE`. In Git Bash, book with a key:
+Get alice's token from Swagger UI, as in guide 06 step 14, and put it in `ALICE` (`ALICE=eyJraWQ...`, or `$ALICE = "eyJraWQ..."` in PowerShell). Book with a key:
 
 ```bash
 curl -i -H "Authorization: Bearer $ALICE" -H 'Idempotency-Key: 7f3c9a2e-booking-1' -H 'Content-Type: application/json' -d '{"ticketTypeId": 57, "quantity": 2}' localhost:8080/bookings
+```
+
+```powershell
+curl.exe -H "Authorization: Bearer $ALICE" --% -i -H "Idempotency-Key: 7f3c9a2e-booking-1" -H "Content-Type: application/json" -d "{\"ticketTypeId\": 57, \"quantity\": 2}" localhost:8080/bookings
 ```
 
 ```
