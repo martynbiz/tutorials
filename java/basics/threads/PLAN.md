@@ -165,7 +165,7 @@ These are only for sidebars and Further reading, so nothing in them is stated wr
 - Each Your turn solution has been run.
 - Every expected-output block that can vary is labelled as one possible run.
 
-### 2. [ ] Guide 02: Sharing data safely
+### 2. [x] Guide 02: Sharing data safely
 
 **Depends on:** milestone 1.
 
@@ -214,6 +214,15 @@ These are only for sidebars and Further reading, so nothing in them is stated wr
 - Both fixed versions always print 400,000.
 - The deadlock listing really hangs, stopped with Ctrl+C, and the guide says how to stop it.
 - Each solution has been run.
+
+**Built (2026-11-25).** Tag `guide-02`; the run results are in `threads-build-notes.md`. Settled or changed while building:
+- **`Main.java`'s shape** (the plan didn't fix it): guide 01's `main` moves, word for word, into `processOrders()` in step 2. The race is a `countingRace()` method with `WORKERS` and `INCREMENTS_PER_WORKER` constants, and the final `main` calls `countingRace()` then `processOrders()`. Both print `Expected …, counted …`.
+- **Step 2's single-thread loop must go before step 3.** Left in front of the race, it warmed the code up and 1 launch in 5 printed 400,000. Step 3 says to remove it, and the sidebar says why.
+- **Exercise 1** puts `totalPence` in `OrderCounter` beside the `AtomicInteger` count, with `synchronized` `addPence` and `totalPence()`. The solution also shows a check under load in `countingRace()`.
+- **Exercise 2** first restores step 5's `synchronized` counter, because the tag's counter is the `AtomicInteger` one.
+- **Exercise 3** has four questions, not two. The added ones ("can it be exactly 400,000?" and "does counting 6 of 6 prove it?") have certain answers. Step 8 says the plain `int` counter would also count 6 of 6, which was checked in 5 launches.
+- **The deadlock listing** is a separate `Deadlock.java` the reader runs and then deletes, so nothing extra is carried into guide 03.
+- **Length:** about 860 lines, under open question 3's limit.
 
 ### 3. [ ] Guide 03: Executors and futures
 
