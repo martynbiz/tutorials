@@ -200,7 +200,16 @@ Settles the exact texts and behaviours that every later milestone quotes. The re
 - Each Common errors message matches milestone 0's notes.
 - Each Your turn solution has been run.
 
-### 2. [ ] Guide 02: Built-in functional interfaces
+### 2. [x] Guide 02: Built-in functional interfaces
+
+**As built:**
+- **Step 2 ends with a payoff:** `shortBooks.removeIf(isLong)` now compiles, printing a *Short books* section, and the guide quotes the compile error the same line gives while `isLong` is still a `BookFilter`. That error is also an extra Common errors entry.
+- **`map` works on the long books**, so `titles` (reused by `replaceAll` in step 6) holds five titles, not ten, which keeps the printed lists short.
+- **Step 2's list is `shortBooks`**, because the plan names step 5's `Supplier` `shelf`.
+- **The primitive specialisations sidebar sits after step 6**, where `Integer` as a type argument first comes up.
+- **Step 7 shows a simplified `Predicate.and`** (`return t -> test(t) && other.test(t);`), to show a default method returning a new lambda. The same shape was compiled and run separately.
+- **Exercise 1's answer is the same five books as `isLong`**, because both Austen books are already long. The solution says so, and shows the `and` version for contrast.
+- **The README is unchanged.** Milestone 2 doesn't list it, so guide 02 is still unlinked in its table until milestone 5.
 
 **Depends on:** milestone 1.
 
