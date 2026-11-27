@@ -224,7 +224,7 @@ These are only for sidebars and Further reading, so nothing in them is stated wr
 - **The deadlock listing** is a separate `Deadlock.java` the reader runs and then deletes, so nothing extra is carried into guide 03.
 - **Length:** about 860 lines, under open question 3's limit.
 
-### 3. [ ] Guide 03: Executors and futures
+### 3. [x] Guide 03: Executors and futures
 
 **Depends on:** milestone 2.
 
@@ -270,6 +270,18 @@ These are only for sidebars and Further reading, so nothing in them is stated wr
 - The bad order prints its `IllegalArgumentException` message through `getCause()`.
 - The program exits without hanging.
 - Each solution has been run.
+
+**Built (2026-11-27).** Tag `guide-03`; the run results are in `threads-build-notes.md`. Settled or changed while building:
+- **`process` declares `throws InterruptedException` from step 5** and drops its `try`/`catch`. The author decided this on 2026-11-25. It departs from the spec's catch-and-restore rule, which still applies to `Runnable`s. A method that returns a total would otherwise have to return a made-up 0, and a `Callable` may throw checked exceptions. Step 5 shows the compile error that motivates the switch from `Runnable` to `Callable`.
+- **`ExecutorService pool`, not `var pool`**, because the series writes types out everywhere else.
+- **`countingRace()` stays in `Main.java`, unchanged**, as guide 02 promised.
+- **`processOrders()`** uses one list of 12 orders and adds order 13 with quantity -1 in step 7. It prints `Orders: 13 submitted, 12 processed, 1 failed` and `Total: 8750p`, and drops guide 02's `Running on: main` line.
+- **Step 3 leaves the pool unclosed on purpose.** The reader sees the early, wrong closing lines and a program that doesn't end, and stops it with Ctrl+C. Step 4 fixes it. So the "pool never closed" Common error is also seen as a step.
+- **Step 6 declares `ExecutionException` on `processOrders()` and `main`, and step 7 removes it again** once it's caught.
+- **An extra Common error:** "unreported `InterruptedException`" inside `pool.submit` (a `Runnable` that should be a `Callable`).
+- **Exercise 3** has four questions, not two. The added ones have certain answers.
+- **Exercise 2** also shows that a failure goes unseen when its `Future` is never read (`0 failed`).
+- **Length:** about 970 lines, under open question 3's limit.
 
 ### 4. [ ] Guide 04: Virtual threads
 
